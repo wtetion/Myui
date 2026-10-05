@@ -3,7 +3,7 @@
 -- public raw URL below, then creates the UI and its tab icons.
 
 local LIBRARY_FILE = "Ui-library.luau"
-local LIBRARY_URL = "" -- Optional: paste the public raw URL for Ui-library.luau.
+local LIBRARY_URL = "https://raw.githubusercontent.com/wtetion/Myui/refs/heads/main/Ui-library.luau" -- Optional: paste the public raw URL for Ui-library.luau.
 local SIGN_IN_LOGO = nil -- Keep nil for Cascade's Apple logo; set an rbxassetid:// URL for a custom logo.
 
 local function readLibrarySource()
