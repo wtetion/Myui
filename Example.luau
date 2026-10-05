@@ -1,7 +1,15 @@
 -- Put CascadeStyleUI as a ModuleScript beside this LocalScript, then run the
 -- LocalScript from StarterPlayerScripts (or another client-only container).
 
-local UI = require(script.Parent:WaitForChild("CascadeStyleUI"))
+local libraryModule = script.Parent:FindFirstChild("Ui-library")
+    or script.Parent:FindFirstChild("CascadeStyleUI")
+
+assert(
+    libraryModule and libraryModule:IsA("ModuleScript"),
+    "Place Ui-library or CascadeStyleUI as a ModuleScript beside this LocalScript"
+)
+
+local UI = require(libraryModule)
 
 local app = UI.new({
     Title = "System Settings",
