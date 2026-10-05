@@ -18,10 +18,22 @@ local UI = {}
 local Section = {}
 local Tab = {}
 local PageSection = {}
+local WindowContext = {}
+local Form = {}
+local Row = {}
+local Side = {}
+local Page = {}
 Section.__index = Section
 Tab.__index = Tab
 PageSection.__index = PageSection
 UI.__index = UI
+WindowContext.__index = WindowContext
+Form.__index = Form
+Row.__index = Row
+Side.__index = Side
+Page.__index = Page
+
+local COMPONENTS = {}
 
 local COLORS = {
     Window = Color3.fromRGB(246, 246, 249),
@@ -38,12 +50,35 @@ local COLORS = {
 }
 
 local ICON_PALETTE = {
-    { Color3.fromRGB(83, 143, 245), Color3.fromRGB(234, 242, 255) },
-    { Color3.fromRGB(64, 179, 120), Color3.fromRGB(230, 248, 239) },
-    { Color3.fromRGB(255, 149, 0), Color3.fromRGB(255, 240, 219) },
-    { Color3.fromRGB(175, 82, 222), Color3.fromRGB(246, 231, 255) },
-    { Color3.fromRGB(255, 55, 95), Color3.fromRGB(255, 231, 237) },
-    { Color3.fromRGB(50, 173, 230), Color3.fromRGB(225, 245, 255) },
+    { Color3.fromRGB(100, 105, 114), Color3.fromRGB(230, 231, 235) },
+    { Color3.fromRGB(83, 111, 150), Color3.fromRGB(225, 234, 247) },
+    { Color3.fromRGB(111, 112, 120), Color3.fromRGB(232, 232, 236) },
+    { Color3.fromRGB(112, 99, 125), Color3.fromRGB(239, 232, 245) },
+    { Color3.fromRGB(128, 91, 91), Color3.fromRGB(246, 233, 232) },
+    { Color3.fromRGB(81, 116, 112), Color3.fromRGB(227, 240, 237) },
+}
+
+UI.Themes = {
+    Light = { _id = "Light" },
+    Dark = { _id = "Dark" },
+}
+
+UI.Accents = {
+    Blue = Color3.fromRGB(0, 122, 255),
+    Red = Color3.fromRGB(255, 59, 48),
+    Orange = Color3.fromRGB(255, 149, 0),
+    Yellow = Color3.fromRGB(255, 204, 0),
+    Green = Color3.fromRGB(52, 199, 89),
+    Graphite = Color3.fromRGB(142, 142, 147),
+    Pink = Color3.fromRGB(255, 45, 85),
+    Purple = Color3.fromRGB(175, 82, 222),
+}
+
+UI.Symbols = {
+    house = "⌂", gear = "⚙", sunMax = "☼", wifi = "◉", bluetooth = "ᛒ",
+    network = "⌁", battery = "▰", accessibility = "◉", sidebarLeft = "▤",
+    display = "▣", bell = "◌", lock = "▣", folder = "▱", magnifyingglass = "⌕",
+    squareStack3dUp = "▣", sliderHorizontal3 = "☷", keyboard = "⌨",
 }
 
 local function make(className, properties, parent)
@@ -140,10 +175,29 @@ function UI.new(config)
         Sections = {},
         Tabs = {},
         SelectedTab = nil,
+        _history = {},
+        _historyIndex = 0,
+        _historyNavigation = false,
         _connections = {},
         _iconIndex = 0,
         _destroyed = false,
     }, UI)
+
+    local initialTheme = config.Theme
+    if type(initialTheme) == "table" then
+        initialTheme = initialTheme._id or initialTheme.Name
+    end
+    app.Theme = initialTheme == "Dark" and "Dark" or "Light"
+
+    local initialAccent = config.Accent or UI.Accents.Blue
+    if typeof(initialAccent) == "Color3" then
+        app.Accent = initialAccent
+    elseif type(initialAccent) == "table" then
+        app.Accent = initialAccent.Color or initialAccent.Light or initialAccent.Dark or UI.Accents.Blue
+    else
+        app.Accent = UI.Accents.Blue
+    end
+    app.AccentColor = COLORS.Blue
 
     local screen = make("ScreenGui", {
         Name = config.Name or "CascadeStyleUI",
@@ -164,6 +218,10 @@ function UI.new(config)
         BorderSizePixel = 0,
     }, screen)
     addCorner(shadow, 20)
+    make("UISizeConstraint", {
+        MinSize = Vector2.new(494, 376),
+        MaxSize = Vector2.new(1100, 740),
+    }, shadow)
 
     local window = make("Frame", {
         Name = "Window",
@@ -177,10 +235,13 @@ function UI.new(config)
     addCorner(window, 18)
     addStroke(window, Color3.fromRGB(255, 255, 255), 0.18, 1)
     make("UISizeConstraint", {
-        MinSize = Vector2.new(660, 430),
+        MinSize = Vector2.new(480, 360),
         MaxSize = Vector2.new(1080, 720),
     }, window)
-    app.Window = window
+    app.WindowFrame = window
+    app.Theme = config.Theme or "Light"
+    app.Accent = config.Accent or COLORS.Blue
+    app.Searching = config.Searching ~= false
 
     local titleBar = make("Frame", {
         Name = "TitleBar",
@@ -262,6 +323,39 @@ function UI.new(config)
     )
     app.WindowTitle = windowTitle
 
+    app.Draggable = config.Draggable ~= false
+    local dragging = false
+    local dragInput = nil
+    local dragStart = nil
+    local startPosition = nil
+    app:_connect(titleBar.InputBegan, function(input)
+        if not app.Draggable then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragInput = input
+            dragStart = input.Position
+            startPosition = window.Position
+        end
+    end)
+    app:_connect(UserInputService.InputChanged, function(input)
+        if not dragging then return end
+        if input == dragInput or input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            window.Position = UDim2.new(
+                startPosition.X.Scale,
+                startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale,
+                startPosition.Y.Offset + delta.Y
+            )
+            shadow.Position = window.Position
+        end
+    end)
+    app:_connect(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
     local expandedSize = window.Size
     local maximized = false
     bindClick(app, maximizeButton, function()
@@ -285,7 +379,7 @@ function UI.new(config)
     local sidebar = make("Frame", {
         Name = "Sidebar",
         Position = UDim2.new(0, 0, 0, 52),
-        Size = UDim2.new(0, 238, 1, -52),
+        Size = UDim2.new(0.34, 0, 1, -52),
         BackgroundColor3 = COLORS.Sidebar,
         BorderSizePixel = 0,
     }, window)
@@ -331,8 +425,8 @@ function UI.new(config)
 
     local content = make("Frame", {
         Name = "Content",
-        Position = UDim2.new(0, 238, 0, 52),
-        Size = UDim2.new(1, -238, 1, -52),
+        Position = UDim2.new(0.34, 0, 0, 52),
+        Size = UDim2.new(0.66, 0, 1, -52),
         BackgroundColor3 = COLORS.Window,
         BorderSizePixel = 0,
         ClipsDescendants = true,
@@ -342,19 +436,47 @@ function UI.new(config)
     local header = make("Frame", {
         Name = "PageHeader",
         Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(1, 0, 0, 102),
+        Size = UDim2.new(1, 0, 0, 80),
         BackgroundTransparency = 1,
     }, content)
     addPadding(header, 30, 28, 16, 10)
     app.PageTitle = label(header, app.Title, UDim2.new(1, 0, 0, 34), UDim2.new(), 25, COLORS.Text, {
         Font = Enum.Font.GothamBold,
     })
-    app.PageSubtitle = label(header, app.Subtitle, UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 36), 13, COLORS.Muted)
+    app.PageTitle.Position = UDim2.new(0, 48, 0, 0)
+    app.PageTitle.Size = UDim2.new(1, -48, 0, 32)
+    app.PageSubtitle = label(header, app.Subtitle, UDim2.new(1, -48, 0, 20), UDim2.new(0, 48, 0, 36), 12, COLORS.Muted)
+    local backButton = make("TextButton", {
+        Name = "Back",
+        Position = UDim2.new(0, -27, 0, 10),
+        Size = UDim2.fromOffset(22, 24),
+        BackgroundTransparency = 1,
+        Text = "‹",
+        TextColor3 = COLORS.Muted,
+        TextSize = 25,
+        Font = Enum.Font.Gotham,
+        AutoButtonColor = true,
+    }, header)
+    local forwardButton = make("TextButton", {
+        Name = "Forward",
+        Position = UDim2.new(0, -5, 0, 10),
+        Size = UDim2.fromOffset(22, 24),
+        BackgroundTransparency = 1,
+        Text = "›",
+        TextColor3 = COLORS.Muted,
+        TextSize = 25,
+        Font = Enum.Font.Gotham,
+        AutoButtonColor = true,
+    }, header)
+    app:_connect(backButton.Activated, function() app:GoBack() end)
+    app:_connect(forwardButton.Activated, function() app:GoForward() end)
+    app.BackButton = backButton
+    app.ForwardButton = forwardButton
 
     local pagesHost = make("Frame", {
         Name = "Pages",
-        Position = UDim2.new(0, 0, 0, 102),
-        Size = UDim2.new(1, 0, 1, -102),
+        Position = UDim2.new(0, 0, 0, 80),
+        Size = UDim2.new(1, 0, 1, -80),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
     }, content)
@@ -364,8 +486,16 @@ function UI.new(config)
         app:_refreshNavigation(searchBox.Text)
     end)
     app.SearchBox = searchBox
+    searchBox.Visible = app.Searching
+    if not app.Searching then app:SetSearching(false) end
 
+    if app.Accent ~= COLORS.Blue then
+        app:SetAccent(app.Accent)
+    end
     app:SetVisible(config.Visible ~= false)
+    if app.Theme == "Dark" or app.Theme == "dark" then
+        app:SetTheme("Dark")
+    end
     return app
 end
 
@@ -373,6 +503,170 @@ function UI:_connect(signal, callback)
     local connection = signal:Connect(callback)
     table.insert(self._connections, connection)
     return connection
+end
+
+function UI:SetTheme(theme)
+    if type(theme) == "table" then
+        theme = theme._id or theme.Name
+    end
+    local wantsDark = theme == "Dark" or theme == "dark" or theme == "AutoDark"
+    local light = {
+        COLORS.Window,
+        COLORS.Sidebar,
+        COLORS.Panel,
+        COLORS.Text,
+        COLORS.Muted,
+        COLORS.Border,
+        COLORS.Selection,
+        Color3.fromRGB(248, 248, 250),
+        Color3.fromRGB(116, 117, 123),
+        Color3.fromRGB(229, 230, 234),
+    }
+    local dark = {
+        Color3.fromRGB(31, 32, 36),
+        Color3.fromRGB(39, 40, 45),
+        Color3.fromRGB(49, 50, 56),
+        Color3.fromRGB(242, 242, 247),
+        Color3.fromRGB(166, 167, 175),
+        Color3.fromRGB(75, 76, 83),
+        Color3.fromRGB(57, 77, 109),
+        Color3.fromRGB(41, 42, 47),
+        Color3.fromRGB(166, 167, 175),
+        Color3.fromRGB(75, 76, 83),
+    }
+    if not self.ScreenGui then return end
+
+    local function resolve(color)
+        for index, lightColor in ipairs(light) do
+            if color == lightColor then
+                return wantsDark and dark[index] or lightColor
+            elseif color == dark[index] then
+                return wantsDark and dark[index] or lightColor
+            end
+        end
+        return color
+    end
+
+    for _, object in ipairs(self.ScreenGui:GetDescendants()) do
+        if object:IsA("GuiObject") then
+            object.BackgroundColor3 = resolve(object.BackgroundColor3)
+        end
+        if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+            object.TextColor3 = resolve(object.TextColor3)
+        elseif object:IsA("UIStroke") then
+            object.Color = resolve(object.Color)
+        end
+    end
+    self.Theme = wantsDark and "Dark" or "Light"
+end
+
+function UI:SetAccent(accent)
+    local previous = self.AccentColor or COLORS.Blue
+    local nextAccent = previous
+    if typeof(accent) == "Color3" then
+        nextAccent = accent
+    elseif type(accent) == "table" then
+        nextAccent = accent.Color or accent.Light or accent.Dark or previous
+    end
+    self.Accent = accent
+    self.AccentColor = nextAccent
+    if not self.ScreenGui then return end
+    for _, object in ipairs(self.ScreenGui:GetDescendants()) do
+        if object:IsA("GuiObject") and object.BackgroundColor3 == previous then
+            object.BackgroundColor3 = nextAccent
+        end
+        if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+            if object.TextColor3 == previous then object.TextColor3 = nextAccent end
+        elseif object:IsA("UIStroke") and object.Color == previous then
+            object.Color = nextAccent
+        elseif object:IsA("ImageLabel") and object.ImageColor3 == previous then
+            object.ImageColor3 = nextAccent
+        end
+    end
+end
+
+function UI:SetSearching(value)
+    self.Searching = value == true
+    self.SearchBox.Visible = self.Searching
+    if self.Searching then
+        self.Navigation.Position = UDim2.new(0, 0, 0, 60)
+        self.Navigation.Size = UDim2.new(1, 0, 1, -72)
+    else
+        self.SearchBox.Text = ""
+        self.Navigation.Position = UDim2.new(0, 0, 0, 12)
+        self.Navigation.Size = UDim2.new(1, 0, 1, -24)
+    end
+    self:_refreshNavigation(self.SearchBox.Text)
+end
+
+function UI:Window(properties)
+    properties = properties or {}
+    if properties.Title or properties.Subtitle then
+        self:SetTitle(properties.Title, properties.Subtitle)
+    end
+    if properties.Searching ~= nil then
+        self:SetSearching(properties.Searching)
+    end
+    if properties.Draggable ~= nil then
+        self.Draggable = properties.Draggable == true
+    end
+    if properties.Theme ~= nil then
+        local selectedTheme = properties.Theme
+        if type(selectedTheme) == "table" then selectedTheme = selectedTheme._id or selectedTheme.Name end
+        self:SetTheme(selectedTheme)
+    end
+    if properties.Accent ~= nil then
+        self:SetAccent(properties.Accent)
+    end
+    local context = setmetatable({ _app = self }, WindowContext)
+    for key, value in pairs(properties) do
+        context[key] = value
+    end
+    return context
+end
+
+function WindowContext:Section(properties)
+    return self._app:Section(properties)
+end
+
+function WindowContext:SetSearching(value)
+    self._app:SetSearching(value)
+    self.Searching = value == true
+end
+
+function WindowContext:SetDraggable(value)
+    self._app.Draggable = value == true
+    self.Draggable = self._app.Draggable
+end
+
+function WindowContext:SetTheme(theme)
+    local selectedTheme = theme
+    if type(selectedTheme) == "table" then selectedTheme = selectedTheme._id or selectedTheme.Name end
+    self._app:SetTheme(selectedTheme)
+    self.Theme = self._app.Theme
+end
+
+function WindowContext:SetAccent(accent)
+    self._app:SetAccent(accent)
+    self.Accent = self._app.Accent
+end
+
+function WindowContext:Show()
+    self._app:Show()
+end
+
+function WindowContext:Hide()
+    self._app:Hide()
+end
+
+function WindowContext:Notification(properties)
+    local body = properties or {}
+    local page = self._app.SelectedTab
+    if page then
+        local section = page:PageSection({ Title = body.Title or "Notification" })
+        return section:Notice({ Title = body.Title, Description = body.Subtitle })
+    end
+    return nil
 end
 
 function UI:SetVisible(value)
@@ -393,6 +687,22 @@ function UI:ToggleVisible()
     if self.ScreenGui then
         self:SetVisible(not self.ScreenGui.Enabled)
     end
+end
+
+function UI:GoBack()
+    if self._historyIndex <= 1 then return end
+    self._historyIndex = self._historyIndex - 1
+    self._historyNavigation = true
+    self:_selectTab(self._history[self._historyIndex])
+    self._historyNavigation = false
+end
+
+function UI:GoForward()
+    if self._historyIndex >= #self._history then return end
+    self._historyIndex = self._historyIndex + 1
+    self._historyNavigation = true
+    self:_selectTab(self._history[self._historyIndex])
+    self._historyNavigation = false
 end
 
 function UI:SetTitle(title, subtitle)
@@ -431,13 +741,22 @@ function UI:_selectTab(tab)
         ancestor = ancestor._parent
     end
     tab._section:SetExpanded(true)
+    if not self._historyNavigation and self.SelectedTab ~= tab then
+        for index = #self._history, self._historyIndex + 1, -1 do
+            table.remove(self._history, index)
+        end
+        table.insert(self._history, tab)
+        self._historyIndex = #self._history
+    end
     self.SelectedTab = tab
+    local selectionColor = self.Theme == "Dark" and Color3.fromRGB(57, 77, 109) or COLORS.Selection
+    local selectedTextColor = self.Theme == "Dark" and Color3.fromRGB(218, 229, 247) or Color3.fromRGB(28, 77, 139)
     for _, item in ipairs(self.Tabs) do
         local selected = item == tab
         item._page.Visible = selected
-        item._row.BackgroundColor3 = selected and COLORS.Selection or Color3.new(1, 1, 1)
+        item._row.BackgroundColor3 = selected and selectionColor or Color3.new(1, 1, 1)
         item._row.BackgroundTransparency = selected and 0 or 1
-        item._title.TextColor3 = selected and Color3.fromRGB(28, 77, 139) or COLORS.Text
+        item._title.TextColor3 = selected and selectedTextColor or (self.Theme == "Dark" and Color3.fromRGB(242, 242, 247) or COLORS.Text)
         item._title.Font = selected and Enum.Font.GothamMedium or Enum.Font.Gotham
     end
     self.PageTitle.Text = tab.Title
@@ -448,6 +767,16 @@ end
 local function tabMatches(tab, query)
     if query == "" or string.find(string.lower(tab.Title), query, 1, true) then
         return true
+    end
+    if tab._page then
+        for _, descendant in ipairs(tab._page:GetDescendants()) do
+            if descendant.Name == "Row" then
+                local searchIndex = descendant:GetAttribute("SearchIndex")
+                if searchIndex and string.find(string.lower(searchIndex), query, 1, true) then
+                    return true
+                end
+            end
+        end
     end
     for _, child in ipairs(tab._children) do
         if tabMatches(child, query) then
@@ -460,6 +789,19 @@ end
 function UI:_refreshNavigation(rawQuery)
     local query = string.lower(string.gsub(rawQuery or "", "^%s*(.-)%s*$", "%1"))
     local searching = query ~= ""
+    for _, tab in ipairs(self.Tabs) do
+        if tab._page then
+            local tabTitleMatches = not searching or string.find(string.lower(tab.Title), query, 1, true) ~= nil
+            for _, descendant in ipairs(tab._page:GetDescendants()) do
+                if descendant.Name == "Row" then
+                    local searchIndex = descendant:GetAttribute("SearchIndex")
+                    if searchIndex and searchIndex ~= "" then
+                        descendant.Visible = tabTitleMatches or string.find(string.lower(searchIndex), query, 1, true) ~= nil
+                    end
+                end
+            end
+        end
+    end
     for _, section in ipairs(self.Sections) do
         local showSection = not searching or string.find(string.lower(section.Title), query, 1, true) ~= nil
         local matchingTab = false
@@ -504,8 +846,8 @@ function UI:Section(properties)
         AutoButtonColor = false,
     }, frame)
     section._heading = heading
-    label(heading, section.Title:upper(), UDim2.new(1, -25, 1, 0), UDim2.new(0, 7, 0, 0), 10, Color3.fromRGB(116, 117, 123), {
-        Font = Enum.Font.GothamBold,
+    label(heading, section.Title, UDim2.new(1, -25, 1, 0), UDim2.new(0, 7, 0, 0), 11, Color3.fromRGB(116, 117, 123), {
+        Font = Enum.Font.GothamMedium,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
     })
@@ -524,16 +866,22 @@ function UI:Section(properties)
     makeVerticalList(items, 2)
     section._items = items
 
-    bindClick(self, heading, function()
-        section:SetExpanded(not section._expanded)
-        self:_refreshNavigation(self.SearchBox.Text)
-    end)
+    section._disclosure = properties.Disclosure ~= false
+    section._arrow.Visible = section._disclosure
+    heading.Active = section._disclosure
+    if section._disclosure then
+        bindClick(self, heading, function()
+            section:SetExpanded(not section._expanded)
+            self:_refreshNavigation(self.SearchBox.Text)
+        end)
+    end
     table.insert(self.Sections, section)
     self:_refreshNavigation(self.SearchBox.Text)
     return section
 end
 
 function Section:SetExpanded(value)
+    if not self._disclosure then return end
     self._expanded = value == true
     self._items.Visible = self._expanded
     setText(self._arrow, self._expanded and "⌄" or "›")
@@ -581,7 +929,7 @@ function Tab:_build(properties, parent)
     local row = make("TextButton", {
         Name = "TabRow",
         Size = UDim2.new(1, 0, 0, 34),
-        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundColor3 = Color3.fromRGB(252, 252, 254),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Text = "",
@@ -732,6 +1080,21 @@ function Tab:Select()
     self._app:_selectTab(self)
 end
 
+function Tab:Navigate(page)
+    local pageInstance = page
+    if type(page) == "table" then
+        pageInstance = page.__instance or page._page
+    end
+    if typeof(pageInstance) ~= "Instance" or not pageInstance:IsA("ScrollingFrame") then
+        warn("[CascadeStyleUI] Tab:Navigate expects a CascadeStyleUI Page or ScrollingFrame")
+        return
+    end
+    self._page.Visible = false
+    self._page = pageInstance
+    self.Page = page
+    self._app:_selectTab(self)
+end
+
 function Tab:PageSection(properties)
     properties = properties or {}
     local section = setmetatable({
@@ -815,7 +1178,7 @@ function PageSection:Toggle(properties)
         AnchorPoint = Vector2.new(0, 0.5),
         Position = current and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
         Size = UDim2.fromOffset(18, 18),
-        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundColor3 = Color3.fromRGB(252, 252, 254),
         BorderSizePixel = 0,
     }, button)
     addCorner(knob, 99)
@@ -850,7 +1213,7 @@ function PageSection:Button(properties)
         AnchorPoint = Vector2.new(1, 0.5),
         Position = UDim2.new(1, -13, 0.5, 0),
         Size = UDim2.new(0, properties.ButtonWidth or 96, 0, 30),
-        BackgroundColor3 = properties.Secondary and Color3.fromRGB(242, 243, 246) or COLORS.Blue,
+        BackgroundColor3 = properties.Secondary and Color3.fromRGB(242, 243, 246) or self._app.AccentColor or COLORS.Blue,
         BorderSizePixel = 0,
         Text = properties.Label or "Open",
         Font = Enum.Font.GothamMedium,
@@ -890,7 +1253,7 @@ function PageSection:Slider(properties)
     local fill = make("Frame", {
         Name = "Fill",
         Size = UDim2.new((value - min) / math.max(max - min, 0.0001), 0, 1, 0),
-        BackgroundColor3 = COLORS.Blue,
+        BackgroundColor3 = self._app.AccentColor or COLORS.Blue,
         BorderSizePixel = 0,
     }, track)
     addCorner(fill, 99)
@@ -979,7 +1342,7 @@ function PageSection:SegmentedControl(properties)
             button.BackgroundColor3 = selected and Color3.fromRGB(229, 239, 255) or Color3.fromRGB(247, 247, 249)
             local stroke = button:FindFirstChildOfClass("UIStroke")
             if stroke then
-                stroke.Color = selected and COLORS.Blue or COLORS.Border
+                stroke.Color = selected and (self._app.AccentColor or COLORS.Blue) or COLORS.Border
                 stroke.Transparency = selected and 0.05 or 0.35
             end
         end
@@ -1134,5 +1497,811 @@ function PageSection:Notice(properties)
     end
     return card
 end
+
+local COMPONENT_METATABLE = {}
+COMPONENT_METATABLE.__index = function(object, key)
+    if key == "ClassName" then return object.__instance.ClassName end
+    if key == "IsA" then
+        return function(_, className)
+            return object.__instance:IsA(className)
+        end
+    end
+    local instance = object.__instance
+    local ok, value = pcall(function() return instance[key] end)
+    if ok then
+        if type(value) == "function" then
+            return function(_, ...)
+                return value(instance, ...)
+            end
+        end
+        return value
+    end
+    return nil
+end
+
+local function component(typeName, instance, value)
+    return setmetatable({
+        Type = typeName,
+        __instance = instance,
+        Value = value,
+    }, COMPONENT_METATABLE)
+end
+
+local function themeColors(app)
+    local dark = app.Theme == "Dark"
+    return {
+        Window = dark and Color3.fromRGB(31, 32, 36) or COLORS.Window,
+        Sidebar = dark and Color3.fromRGB(39, 40, 45) or COLORS.Sidebar,
+        Panel = dark and Color3.fromRGB(49, 50, 56) or COLORS.Panel,
+        Text = dark and Color3.fromRGB(242, 242, 247) or COLORS.Text,
+        Muted = dark and Color3.fromRGB(166, 167, 175) or COLORS.Muted,
+        Border = dark and Color3.fromRGB(75, 76, 83) or COLORS.Border,
+        Selection = dark and Color3.fromRGB(57, 77, 109) or COLORS.Selection,
+    }
+end
+
+local function callback(callbackFunction, control, ...)
+    if type(callbackFunction) ~= "function" then return end
+    local ok, err = pcall(callbackFunction, control, ...)
+    if not ok then warn("[CascadeStyleUI] Component callback error: " .. tostring(err)) end
+end
+
+local function rowHeight(row, height)
+    row._frame.Size = UDim2.new(1, 0, 0, height)
+end
+
+function Tab:Form()
+    return setmetatable({
+        Type = "Form",
+        _app = self._app,
+        _tab = self,
+        _parent = self._page,
+    }, Form)
+end
+
+function UI:Page()
+    local instance = make("ScrollingFrame", {
+        Name = "CustomPage",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 5,
+        ScrollBarImageColor3 = Color3.fromRGB(174, 176, 183),
+        CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible = false,
+    }, self.PagesHost)
+    addPadding(instance, 28, 24, 2, 22)
+    local layout = makeVerticalList(instance, 16)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    return setmetatable({ Type = "Page", __instance = instance, _page = instance, _app = self }, Page)
+end
+
+function Page:Form()
+    return setmetatable({ Type = "Form", _app = self._app, _tab = self, _parent = self._page }, Form)
+end
+
+function Page:PageSection(properties)
+    return Tab.PageSection(self, properties)
+end
+
+function PageSection:Form()
+    return setmetatable({
+        Type = "Form",
+        _app = self._app,
+        _tab = self._tab,
+        _parent = self._frame,
+    }, Form)
+end
+
+function PageSection:Row(properties)
+    return self:Form():Row(properties)
+end
+
+function Form:Row(properties)
+    properties = properties or {}
+    local palette = themeColors(self._app)
+    local height = properties.Height or 62
+    local frame = make("Frame", {
+        Name = "Row",
+        Size = UDim2.new(1, 0, 0, height),
+        BackgroundColor3 = palette.Panel,
+        BorderSizePixel = 0,
+        ClipsDescendants = false,
+    }, self._parent)
+    addCorner(frame, 9)
+    addStroke(frame, palette.Border, 0.35, 1)
+
+    local left = make("Frame", {
+        Name = "Left",
+        Position = UDim2.new(0, 13, 0, 0),
+        Size = UDim2.new(0.54, -16, 1, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    }, frame)
+    local right = make("Frame", {
+        Name = "Right",
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -12, 0, 0),
+        Size = UDim2.new(0.43, 0, 1, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    }, frame)
+    local result = setmetatable({
+        Type = "Row",
+        __instance = frame,
+        _app = self._app,
+        _tab = self._tab,
+        _frame = frame,
+        _left = left,
+        _right = right,
+        SearchIndex = properties.SearchIndex,
+    }, Row)
+    frame:SetAttribute("SearchIndex", properties.SearchIndex or "")
+    return result
+end
+
+function Row:Left()
+    return setmetatable({ _row = self, _container = self._left }, Side)
+end
+
+function Row:Right()
+    return setmetatable({ _row = self, _container = self._right }, Side)
+end
+
+function Side:TitleStack(properties)
+    properties = properties or {}
+    local row = self._row
+    local parent = self._container
+    local palette = themeColors(row._app)
+    local hasSubtitle = properties.Subtitle ~= nil and properties.Subtitle ~= ""
+    local previousIndex = row._frame:GetAttribute("SearchIndex") or ""
+    local ownIndex = table.concat({ properties.Title or "", properties.Subtitle or "" }, " ")
+    row._frame:SetAttribute("SearchIndex", previousIndex .. " " .. ownIndex)
+    local title = label(parent, properties.Title or "", UDim2.new(1, 0, 0, 20),
+        UDim2.new(0, 0, hasSubtitle and 9 or 0.5, hasSubtitle and 0 or -10),
+        13, palette.Text, { Font = Enum.Font.GothamMedium })
+    if hasSubtitle then
+        label(parent, properties.Subtitle, UDim2.new(1, 0, 0, 17), UDim2.new(0, 0, 0, 31), 11, palette.Muted)
+        rowHeight(row, math.max(row._frame.Size.Y.Offset, 66))
+    end
+    return component("TitleStack", parent, nil)
+end
+
+function Side:Label(properties)
+    properties = properties or {}
+    local palette = themeColors(self._row._app)
+    local instance = label(self._container, properties.Text or "", UDim2.new(1, 0, 1, 0), UDim2.new(),
+        properties.TextSize or 13, properties.TextColor3 or palette.Text, {
+            Font = properties.Font or Enum.Font.Gotham,
+            TextXAlignment = properties.TextXAlignment or Enum.TextXAlignment.Right,
+        })
+    return component("Label", instance)
+end
+
+function Side:Toggle(properties)
+    properties = properties or {}
+    rowHeight(self._row, math.max(self._row._frame.Size.Y.Offset, properties.Description and 66 or 54))
+    local current = properties.Value == true
+    local app = self._row._app
+    local button = make("TextButton", {
+        Name = "Toggle",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.fromOffset(42, 24),
+        BackgroundColor3 = current and Color3.fromRGB(48, 209, 88) or Color3.fromRGB(205, 206, 212),
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+    }, self._container)
+    addCorner(button, 99)
+    local knob = make("Frame", {
+        Name = "Knob",
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = current and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+        Size = UDim2.fromOffset(18, 18),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+    }, button)
+    addCorner(knob, 99)
+    local control = component("Toggle", button, current)
+    function control:SetValue(value, fire)
+        current = value == true
+        self.Value = current
+        TweenService:Create(button, TweenInfo.new(0.15), {
+            BackgroundColor3 = current and Color3.fromRGB(48, 209, 88) or Color3.fromRGB(205, 206, 212),
+        }):Play()
+        TweenService:Create(knob, TweenInfo.new(0.15), {
+            Position = current and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+        }):Play()
+        if fire ~= false then callback(properties.ValueChanged, self, current) end
+    end
+    function control:GetValue() return current end
+    bindClick(app, button, function() control:SetValue(not current, true) end)
+    return control
+end
+
+function Side:Button(properties)
+    properties = properties or {}
+    local app = self._row._app
+    local palette = themeColors(app)
+    local state = properties.State or "Primary"
+    local color = state == "Destructive" and Color3.fromRGB(255, 59, 48)
+        or state == "Secondary" and palette.Sidebar
+        or app.AccentColor
+    local textColor = state == "Secondary" and palette.Text or Color3.new(1, 1, 1)
+    local button = make("TextButton", {
+        Name = "Button",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.fromOffset(properties.Width or 102, 30),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Text = properties.Label or "Button",
+        Font = Enum.Font.GothamMedium,
+        TextSize = 12,
+        TextColor3 = textColor,
+        AutoButtonColor = true,
+    }, self._container)
+    addCorner(button, 8)
+    local control = component("Button", button)
+    bindClick(app, button, function() callback(properties.Pushed, control) end)
+    return control
+end
+
+function Side:Slider(properties)
+    properties = properties or {}
+    local minimum = tonumber(properties.Minimum) or 0
+    local maximum = tonumber(properties.Maximum) or 100
+    if maximum <= minimum then maximum = minimum + 1 end
+    local value = math.clamp(tonumber(properties.Value) or minimum, minimum, maximum)
+    local app = self._row._app
+    rowHeight(self._row, math.max(self._row._frame.Size.Y.Offset, 74))
+    local valueText = label(self._container, tostring(value), UDim2.new(1, 0, 0, 17), UDim2.new(0, 0, 0, 9), 11,
+        themeColors(app).Muted, { TextXAlignment = Enum.TextXAlignment.Right })
+    local track = make("TextButton", {
+        Name = "SliderTrack",
+        Position = UDim2.new(0, 0, 0, 45),
+        Size = UDim2.new(1, 0, 0, 5),
+        BackgroundColor3 = Color3.fromRGB(218, 219, 224),
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+    }, self._container)
+    addCorner(track, 99)
+    local ratio = (value - minimum) / (maximum - minimum)
+    local fill = make("Frame", { Size = UDim2.new(ratio, 0, 1, 0), BackgroundColor3 = app.AccentColor, BorderSizePixel = 0 }, track)
+    addCorner(fill, 99)
+    local handle = make("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(ratio, 0, 0.5, 0),
+        Size = UDim2.fromOffset(13, 13),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+    }, track)
+    addCorner(handle, 99)
+    addStroke(handle, Color3.fromRGB(190, 191, 197), 0.1, 1)
+    local control = component("Slider", track, value)
+    local step = tonumber(properties.Step) or 0
+    function control:SetValue(nextValue, fire)
+        value = math.clamp(tonumber(nextValue) or minimum, minimum, maximum)
+        if step > 0 then
+            value = minimum + math.floor((value - minimum) / step + 0.5) * step
+            value = math.clamp(value, minimum, maximum)
+        end
+        self.Value = value
+        local nextRatio = (value - minimum) / (maximum - minimum)
+        fill.Size = UDim2.new(nextRatio, 0, 1, 0)
+        handle.Position = UDim2.new(nextRatio, 0, 0.5, 0)
+        valueText.Text = tostring(value)
+        if fire ~= false then callback(properties.ValueChanged, self, value) end
+    end
+    function control:GetValue() return value end
+    local dragging = false
+    local function update(input)
+        local width = math.max(track.AbsoluteSize.X, 1)
+        local position = math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1)
+        control:SetValue(minimum + (maximum - minimum) * position, true)
+    end
+    app:_connect(track.InputBegan, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            update(input)
+        end
+    end)
+    app:_connect(UserInputService.InputChanged, function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input)
+        end
+    end)
+    app:_connect(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+    end)
+    return control
+end
+
+function Side:RadioButtonGroup(properties)
+    properties = properties or {}
+    local options = properties.Options or { "Option 1", "Option 2" }
+    if #options == 0 then options = { "Option 1" } end
+    local selected = tonumber(properties.Value) or 1
+    selected = math.clamp(selected, 1, #options)
+    local preview = properties.Preview == true
+    local app = self._row._app
+    local height = preview and 84 or 28
+    rowHeight(self._row, math.max(self._row._frame.Size.Y.Offset, preview and 100 or 52))
+    self._row._left.Size = UDim2.new(0.46, -16, 1, 0)
+    self._row._right.Size = UDim2.new(0.53, 0, 1, 0)
+    local holder = make("Frame", {
+        Name = "RadioButtonGroup",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.new(1, 0, 0, height),
+        BackgroundTransparency = 1,
+    }, self._container)
+    local layout = make("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, preview and 5 or 4),
+    }, holder)
+    local buttons = {}
+    local control = component("RadioButtonGroup", holder, selected)
+    local function refresh()
+        for index, button in ipairs(buttons) do
+            local stroke = button:FindFirstChildOfClass("UIStroke")
+            local active = index == selected
+            if stroke then
+                stroke.Color = active and app.AccentColor or themeColors(app).Border
+                stroke.Transparency = active and 0 or 0.35
+                stroke.Thickness = active and 1.5 or 1
+            end
+            button.BackgroundColor3 = active and Color3.fromRGB(239, 245, 255) or themeColors(app).Panel
+        end
+    end
+    function control:SetValue(nextValue, fire)
+        local index = tonumber(nextValue)
+        if not index and type(nextValue) == "string" then index = table.find(options, nextValue) end
+        if not index or index < 1 or index > #options then return end
+        selected = math.floor(index)
+        self.Value = selected
+        refresh()
+        if fire ~= false then callback(properties.ValueChanged, self, selected) end
+    end
+    function control:GetValue() return selected end
+    for index, option in ipairs(options) do
+        local button = make("TextButton", {
+            Name = "Option_" .. tostring(option),
+            Size = UDim2.new(1 / #options, preview and -5 or -4, 1, 0),
+            BackgroundColor3 = themeColors(app).Panel,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = index,
+        }, holder)
+        addCorner(button, preview and 8 or 7)
+        addStroke(button, themeColors(app).Border, 0.35, 1)
+        if preview then
+            local previewFrame = make("Frame", {
+                Position = UDim2.new(0.5, -18, 0, 5),
+                Size = UDim2.new(0, 36, 0, 43),
+                BackgroundColor3 = (string.lower(tostring(option)) == "dark") and Color3.fromRGB(39, 40, 46) or Color3.fromRGB(249, 249, 251),
+                BorderSizePixel = 0,
+            }, button)
+            addCorner(previewFrame, 5)
+            addStroke(previewFrame, Color3.fromRGB(188, 189, 196), 0.3, 1)
+            make("Frame", {
+                Position = UDim2.new(0, 0, 0, 0),
+                Size = UDim2.new(0.3, 0, 1, 0),
+                BackgroundColor3 = (string.lower(tostring(option)) == "dark") and Color3.fromRGB(50, 51, 58) or Color3.fromRGB(230, 231, 235),
+                BorderSizePixel = 0,
+            }, previewFrame)
+            label(button, tostring(option), UDim2.new(1, -4, 0, 17), UDim2.new(0, 2, 1, -20), 10, themeColors(app).Text, {
+                TextXAlignment = Enum.TextXAlignment.Center,
+                Font = Enum.Font.GothamMedium,
+            })
+        else
+            label(button, tostring(option), UDim2.new(1, -6, 1, 0), UDim2.new(0, 3, 0, 0), 10, themeColors(app).Text, {
+                TextXAlignment = Enum.TextXAlignment.Center,
+            })
+        end
+        buttons[index] = button
+        bindClick(app, button, function() control:SetValue(index, true) end)
+    end
+    refresh()
+    return control
+end
+
+function Side:ColorSwatches(properties)
+    properties = properties or {}
+    local palette = properties.Colors or {
+        Color3.fromRGB(156, 120, 255), Color3.fromRGB(0, 122, 255), Color3.fromRGB(175, 82, 222),
+        Color3.fromRGB(255, 55, 95), Color3.fromRGB(255, 149, 0), Color3.fromRGB(255, 204, 0),
+        Color3.fromRGB(52, 199, 89), Color3.fromRGB(142, 142, 147),
+    }
+    if #palette == 0 then palette = { UI.Accents.Blue } end
+    local value = properties.Value or palette[1]
+    rowHeight(self._row, math.max(self._row._frame.Size.Y.Offset, 52))
+    self._row._left.Size = UDim2.new(0.34, -16, 1, 0)
+    self._row._right.Size = UDim2.new(0.65, 0, 1, 0)
+    local holder = make("Frame", {
+        Name = "ColorSwatches",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.new(1, 0, 0, 25),
+        BackgroundTransparency = 1,
+    }, self._container)
+    make("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 5),
+    }, holder)
+    local buttons = {}
+    local control = component("ColorSwatches", holder, value)
+    local function refresh()
+        for color, button in pairs(buttons) do
+            local stroke = button:FindFirstChildOfClass("UIStroke")
+            if stroke then
+                stroke.Color = color == value and themeColors(self._row._app).Text or Color3.fromRGB(211, 212, 218)
+                stroke.Thickness = color == value and 2 or 1
+            end
+        end
+    end
+    function control:SetValue(nextValue, fire)
+        if typeof(nextValue) ~= "Color3" then return end
+        value = nextValue
+        self.Value = value
+        refresh()
+        if fire ~= false then callback(properties.ValueChanged, self, value) end
+    end
+    function control:GetValue() return value end
+    for index, color in ipairs(palette) do
+        local button = make("TextButton", {
+            Name = "Color_" .. tostring(index),
+            Size = UDim2.fromOffset(19, 19),
+            BackgroundColor3 = color,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = index,
+        }, holder)
+        addCorner(button, 99)
+        addStroke(button, Color3.fromRGB(211, 212, 218), 0, 1)
+        buttons[color] = button
+        bindClick(self._row._app, button, function() control:SetValue(color, true) end)
+    end
+    refresh()
+    return control
+end
+
+function Side:PopUpButton(properties)
+    properties = properties or {}
+    local options = properties.Options or { "Option 1", "Option 2" }
+    if #options == 0 then options = { "Option 1" } end
+    local value = math.clamp(tonumber(properties.Value) or 1, 1, #options)
+    local app = self._row._app
+    rowHeight(self._row, math.max(self._row._frame.Size.Y.Offset, 54))
+    local button = make("TextButton", {
+        Name = "PopUpButton",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.new(1, 0, 0, 29),
+        BackgroundColor3 = themeColors(app).Sidebar,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = true,
+    }, self._container)
+    addCorner(button, 7)
+    addStroke(button, themeColors(app).Border, 0.5, 1)
+    local caption = label(button, tostring(options[value]), UDim2.new(1, -30, 1, 0), UDim2.new(0, 10, 0, 0), 11,
+        themeColors(app).Text, { TextXAlignment = Enum.TextXAlignment.Left })
+    label(button, "⌄", UDim2.fromOffset(20, 29), UDim2.new(1, -22, 0, 0), 13, themeColors(app).Muted, {
+        TextXAlignment = Enum.TextXAlignment.Center,
+    })
+    local menu = make("Frame", {
+        Name = "PopupMenu",
+        Visible = false,
+        Size = UDim2.fromOffset(150, math.min(#options, 6) * 29 + 8),
+        BackgroundColor3 = themeColors(app).Panel,
+        BorderSizePixel = 0,
+        ZIndex = 20,
+    }, app.ScreenGui)
+    addCorner(menu, 8)
+    addStroke(menu, themeColors(app).Border, 0.1, 1)
+    addPadding(menu, 4, 4, 4, 4)
+    makeVerticalList(menu, 2)
+    local control = component("PopUpButton", button, value)
+    control.Options = options
+    for index, option in ipairs(options) do
+        local optionButton = make("TextButton", {
+            Name = "Option_" .. tostring(index),
+            Size = UDim2.new(1, 0, 0, 27),
+            BackgroundColor3 = Color3.fromRGB(239, 245, 255),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Text = tostring(option),
+            TextColor3 = themeColors(app).Text,
+            TextSize = 11,
+            Font = Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            AutoButtonColor = true,
+            ZIndex = 21,
+            LayoutOrder = index,
+        }, menu)
+        addPadding(optionButton, 8, 4, 0, 0)
+        addCorner(optionButton, 5)
+        bindClick(app, optionButton, function()
+            value = index
+            caption.Text = tostring(option)
+            menu.Visible = false
+            control.Value = value
+            callback(properties.ValueChanged, control, value)
+        end)
+    end
+    function control:SetValue(nextValue, fire)
+        value = math.clamp(tonumber(nextValue) or 1, 1, #options)
+        self.Value = value
+        caption.Text = tostring(options[value])
+        if fire ~= false then callback(properties.ValueChanged, self, value) end
+    end
+    function control:GetValue() return value end
+    bindClick(app, button, function()
+        menu.Position = UDim2.fromOffset(button.AbsolutePosition.X, button.AbsolutePosition.Y + button.AbsoluteSize.Y + 3)
+        menu.Size = UDim2.fromOffset(button.AbsoluteSize.X, math.min(#options, 6) * 29 + 8)
+        menu.Visible = not menu.Visible
+    end)
+    return control
+end
+
+function Side:PullDownButton(properties)
+    return self:PopUpButton(properties)
+end
+
+function Side:TextField(properties)
+    properties = properties or {}
+    local app = self._row._app
+    rowHeight(self._row, math.max(self._row._frame.Size.Y.Offset, 54))
+    local box = make("TextBox", {
+        Name = "TextField",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.new(1, 0, 0, 30),
+        BackgroundColor3 = themeColors(app).Sidebar,
+        BorderSizePixel = 0,
+        ClearTextOnFocus = false,
+        Font = Enum.Font.Gotham,
+        PlaceholderText = properties.Placeholder or "Enter text",
+        PlaceholderColor3 = themeColors(app).Muted,
+        Text = properties.Value or "",
+        TextColor3 = themeColors(app).Text,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, self._container)
+    addCorner(box, 7)
+    addStroke(box, themeColors(app).Border, 0.5, 1)
+    addPadding(box, 9, 8, 0, 0)
+    local control = component("TextField", box, box.Text)
+    local updating = false
+    app:_connect(box:GetPropertyChangedSignal("Text"), function()
+        if updating then return end
+        control.Value = box.Text
+        callback(properties.TextChanged, control, box.Text)
+        callback(properties.ValueChanged, control, box.Text)
+    end)
+    function control:SetValue(value, fire)
+        updating = true
+        box.Text = tostring(value or "")
+        updating = false
+        self.Value = box.Text
+        if fire ~= false then
+            callback(properties.TextChanged, self, box.Text)
+            callback(properties.ValueChanged, self, box.Text)
+        end
+    end
+    function control:GetValue() return box.Text end
+    return control
+end
+
+function Side:Stepper(properties)
+    properties = properties or {}
+    local minimum = tonumber(properties.Minimum) or 0
+    local maximum = tonumber(properties.Maximum) or 100
+    local step = tonumber(properties.Step) or 1
+    local value = math.clamp(tonumber(properties.Value) or minimum, minimum, maximum)
+    local app = self._row._app
+    rowHeight(self._row, math.max(self._row._frame.Size.Y.Offset, 54))
+    local group = make("Frame", {
+        Name = "Stepper",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.fromOffset(102, 30),
+        BackgroundColor3 = themeColors(app).Sidebar,
+        BorderSizePixel = 0,
+    }, self._container)
+    addCorner(group, 7)
+    addStroke(group, themeColors(app).Border, 0.5, 1)
+    local number = label(group, tostring(value), UDim2.new(1, -54, 1, 0), UDim2.new(0, 6, 0, 0), 11, themeColors(app).Text, {
+        TextXAlignment = Enum.TextXAlignment.Center,
+    })
+    local control = component("Stepper", group, value)
+    function control:SetValue(nextValue, fire)
+        value = math.clamp(tonumber(nextValue) or minimum, minimum, maximum)
+        self.Value = value
+        number.Text = tostring(value)
+        if fire ~= false then callback(properties.ValueChanged, self, value) end
+    end
+    function control:GetValue() return value end
+    local minus = make("TextButton", { Size = UDim2.fromOffset(25, 28), Position = UDim2.new(1, -52, 0, 1), BackgroundTransparency = 1, Text = "−", TextColor3 = themeColors(app).Text, TextSize = 18, Font = Enum.Font.Gotham, ZIndex = 2 }, group)
+    local plus = make("TextButton", { Size = UDim2.fromOffset(25, 28), Position = UDim2.new(1, -26, 0, 1), BackgroundTransparency = 1, Text = "+", TextColor3 = themeColors(app).Text, TextSize = 17, Font = Enum.Font.Gotham, ZIndex = 2 }, group)
+    function control:Increment() self:SetValue(value + step, true) end
+    function control:Decrement() self:SetValue(value - step, true) end
+    bindClick(app, minus, function() control:Decrement() end)
+    bindClick(app, plus, function() control:Increment() end)
+    return control
+end
+
+function Side:KeybindField(properties)
+    properties = properties or {}
+    local app = self._row._app
+    local value = properties.Value or Enum.KeyCode.Unknown
+    local listening = false
+    rowHeight(self._row, math.max(self._row._frame.Size.Y.Offset, 54))
+    local button = make("TextButton", {
+        Name = "KeybindField",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.fromOffset(96, 29),
+        BackgroundColor3 = themeColors(app).Sidebar,
+        BorderSizePixel = 0,
+        Text = value == Enum.KeyCode.Unknown and (properties.Placeholder or "Set shortcut") or value.Name,
+        TextColor3 = themeColors(app).Text,
+        TextSize = 11,
+        Font = Enum.Font.Gotham,
+        AutoButtonColor = true,
+    }, self._container)
+    addCorner(button, 7)
+    addStroke(button, themeColors(app).Border, 0.5, 1)
+    local control = component("KeybindField", button, value)
+    function control:SetValue(nextValue, fire)
+        if typeof(nextValue) ~= "EnumItem" then return end
+        value = nextValue
+        self.Value = value
+        button.Text = value.Name
+        if fire ~= false then callback(properties.ValueChanged, self, value) end
+    end
+    function control:GetValue() return value end
+    bindClick(app, button, function()
+        listening = true
+        button.Text = "Press a key…"
+    end)
+    app:_connect(UserInputService.InputBegan, function(input, gameProcessed)
+        if listening and input.UserInputType == Enum.UserInputType.Keyboard then
+            listening = false
+            control:SetValue(input.KeyCode, true)
+            return
+        end
+        if not listening and input.KeyCode == value and value ~= Enum.KeyCode.Unknown then
+            callback(properties.BindPressed, control, value, true, gameProcessed)
+        end
+    end)
+    return control
+end
+
+function Side:Symbol(properties)
+    properties = properties or {}
+    local image = properties.Image
+    local instance
+    if type(image) == "string" and string.match(image, "^rbxassetid://") then
+        instance = make("ImageLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(properties.Size or 20, properties.Size or 20),
+            Image = image,
+            ImageColor3 = properties.ImageColor3 or themeColors(self._row._app).Text,
+        }, self._container)
+    else
+        local symbolText = type(image) == "string" and image or "◈"
+        instance = label(self._container, symbolText, UDim2.fromOffset(properties.Size or 20, properties.Size or 20), UDim2.new(),
+            properties.TextSize or 15, properties.ImageColor3 or themeColors(self._row._app).Text, {
+                TextXAlignment = Enum.TextXAlignment.Center,
+            })
+    end
+    return component("Symbol", instance)
+end
+
+function Side:ImageSurface(properties)
+    properties = properties or {}
+    local tile = make("Frame", {
+        Name = "ImageSurface",
+        Size = UDim2.fromOffset(properties.Size or 28, properties.Size or 28),
+        BackgroundColor3 = properties.SurfaceColor or Color3.fromRGB(230, 231, 235),
+        BorderSizePixel = 0,
+    }, self._container)
+    addCorner(tile, 7)
+    local icon = properties.Image or "◈"
+    if type(icon) == "string" and string.match(icon, "^rbxassetid://") then
+        make("ImageLabel", { BackgroundTransparency = 1, Size = UDim2.fromScale(0.7, 0.7), Position = UDim2.fromScale(0.15, 0.15), Image = icon, ImageColor3 = properties.ImageColor or Color3.new(1, 1, 1) }, tile)
+    else
+        label(tile, icon, UDim2.fromScale(1, 1), UDim2.new(), 14, properties.ImageColor or Color3.new(1, 1, 1), { TextXAlignment = Enum.TextXAlignment.Center })
+    end
+    return component("ImageSurface", tile)
+end
+
+function UI.RegisterComponent(name, maker)
+    assert(type(name) == "string" and name ~= "", "Component name must be a non-empty string")
+    assert(type(maker) == "function", "Component maker must be a function")
+    UI._customComponents = UI._customComponents or {}
+    UI._customComponents[name] = maker
+end
+
+function UI.Component(properties)
+    properties = properties or {}
+    local parent = properties.Parent
+    assert(typeof(parent) == "Instance", "CascadeStyleUI.Component requires Parent")
+    local screen = parent:IsA("ScreenGui") and parent or parent:FindFirstAncestorOfClass("ScreenGui")
+    local app = setmetatable({
+        ScreenGui = screen or parent,
+        Theme = type(properties.Theme) == "table" and (properties.Theme._id or "Light") or properties.Theme or "Light",
+        AccentColor = properties.Accent or UI.Accents.Blue,
+        _connections = {},
+        _destroyed = false,
+    }, UI)
+    if type(app.AccentColor) == "table" then
+        app.AccentColor = app.AccentColor.Color or app.AccentColor.Light or UI.Accents.Blue
+    end
+    local context = {
+        Type = "ComponentContext",
+        Parent = parent,
+        Theme = app.Theme,
+        Accent = app.AccentColor,
+        _app = app,
+    }
+    function context:Row(rowProperties)
+        return setmetatable({ _app = self._app, _tab = nil, _parent = self.Parent }, Form):Row(rowProperties)
+    end
+
+    local exposed = {
+        "Toggle", "Button", "Slider", "RadioButtonGroup", "ColorSwatches", "PopUpButton",
+        "PullDownButton", "TextField", "Stepper", "KeybindField", "Label", "Symbol", "ImageSurface",
+    }
+    local contextMeta = {}
+    contextMeta.__index = function(self, key)
+        if key == "Row" then return rawget(context, "Row") end
+        if table.find(exposed, key) then
+            return function(_, componentProperties)
+                componentProperties = componentProperties or {}
+                local target = componentProperties.Parent or self.Parent
+                local form = setmetatable({ _app = self._app, _tab = nil, _parent = target }, Form)
+                local height = componentProperties.Height or (componentProperties.Preview and 126 or 62)
+                local row = form:Row({ Height = height })
+                row._left.Size = UDim2.new(0, 0, 1, 0)
+                row._right.AnchorPoint = Vector2.new(0, 0)
+                row._right.Position = UDim2.new(0, 10, 0, 0)
+                row._right.Size = UDim2.new(1, -20, 1, 0)
+                local control = Side[key](row:Right(), componentProperties)
+                return control, control.__instance
+            end
+        end
+        return nil
+    end
+    return setmetatable(context, contextMeta)
+end
+
+Side.__index = function(self, key)
+    local method = rawget(Side, key)
+    if method then return method end
+    local makers = UI._customComponents
+    local maker = makers and makers[key]
+    if maker then
+        return function(side, properties)
+            return maker(side, properties)
+        end
+    end
+    return nil
+end
+
+UI.New = UI.new
 
 return UI
