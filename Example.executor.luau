@@ -1,80 +1,67 @@
--- Executor example. Run this as a normal executor script.
--- It loads Ui-library.luau from the executor workspace first, or from the
--- public raw URL below, then creates the UI and its tab icons.
+-- Run this example directly in an executor.
+-- The library builds the tabs, icons, controls, and Search suggestions from
+-- the UI reference; this file only loads it and opens the window.
 
-local LIBRARY_FILE = "Ui-library.luau"
-local LIBRARY_URL = "https://raw.githubusercontent.com/wtetion/Myui/refs/heads/main/Ui-library.luau" -- Optional: paste the public raw URL for Ui-library.luau.
-local SIGN_IN_LOGO = nil -- Keep nil for Cascade's Apple logo; set an rbxassetid:// URL for a custom logo.
+local LIBRARY_URL = "https://raw.githubusercontent.com/wtetion/Myui/refs/heads/main/Ui-library.luau"
+local SIGN_IN_IMAGE = "rbxassetid://86949082023913"
 
-local function readLibrarySource()
-	if type(readfile) == "function" then
-		local ok, source = pcall(readfile, LIBRARY_FILE)
+if type(loadstring) ~= "function" then
+	error("[Myui Example] This executor must provide loadstring.", 0)
+end
+
+local function fetchLibrary()
+	local requests = {
+		function()
+			return game:HttpGet(LIBRARY_URL)
+		end,
+		function()
+			return game:HttpGetAsync(LIBRARY_URL)
+		end,
+	}
+	local lastError = "No HTTP method is available."
+	for _, request in ipairs(requests) do
+		local ok, source = pcall(request)
 		if ok and type(source) == "string" and #source > 0 then
 			return source
 		end
+		lastError = tostring(source)
 	end
-
-	if type(LIBRARY_URL) == "string" and LIBRARY_URL:match("^https?://") then
-		local requests = {
-			function()
-				return game:HttpGetAsync(LIBRARY_URL)
-			end,
-			function()
-				return game:HttpGet(LIBRARY_URL)
-			end,
-		}
-		local lastError = "No HTTP method is available."
-		for _, request in ipairs(requests) do
-			local ok, source = pcall(request)
-			if ok and type(source) == "string" and #source > 0 then
-				return source
-			end
-			lastError = tostring(source)
-		end
-		error("[CascadeStyleUI Example] Could not download Ui-library.luau: " .. lastError, 0)
-	end
-
-	error(
-		"[CascadeStyleUI Example] Put Ui-library.luau in the executor workspace, "
-			.. "or set LIBRARY_URL to its public raw URL at the top of this example.",
-		0
-	)
+	error("[Myui Example] Could not fetch Ui-library.luau: " .. lastError, 0)
 end
 
-if type(loadstring) ~= "function" then
-	error("[CascadeStyleUI Example] This runner needs an executor that provides loadstring.", 0)
-end
-
-local source = readLibrarySource()
-local libraryChunk, compileError = loadstring(source, "@Ui-library.luau")
+local source = fetchLibrary()
+local libraryChunk, compileError = loadstring(source, "@Myui/Ui-library.luau")
 if type(libraryChunk) ~= "function" then
-	error("[CascadeStyleUI Example] Ui-library.luau could not be compiled: " .. tostring(compileError), 0)
+	error("[Myui Example] Library compile failed: " .. tostring(compileError), 0)
 end
 
-local UI = libraryChunk()
+local ok, UI = pcall(libraryChunk)
+if not ok then
+	error("[Myui Example] Library initialization failed: " .. tostring(UI), 0)
+end
 if type(UI) ~= "table" or type(UI.CreateSystemSettings) ~= "function" then
-	error("[CascadeStyleUI Example] Ui-library.luau did not return the expected UI API.", 0)
+	error("[Myui Example] Ui-library.luau returned an incompatible API.", 0)
 end
 
-local options = {}
-if type(SIGN_IN_LOGO) == "string" and SIGN_IN_LOGO ~= "" then
-	options.SignInLogo = SIGN_IN_LOGO
-end
-
-local app, handles = UI.CreateSystemSettings(options)
+-- Creates Sign In, Software Update, Connectivity, System,
+-- Privacy & Security, Automation, and the Appearance controls shown in the
+-- reference. The Library supplies the tab icons and Search suggestions.
+local app, handles = UI.CreateSystemSettings({
+	SignInLogo = SIGN_IN_IMAGE,
+})
 
 local environment = _G
 if type(getgenv) == "function" then
-	local ok, executorEnvironment = pcall(getgenv)
-	if ok and type(executorEnvironment) == "table" then
+	local envOk, executorEnvironment = pcall(getgenv)
+	if envOk and type(executorEnvironment) == "table" then
 		environment = executorEnvironment
 	end
 end
 
 pcall(function()
-	environment.CascadeStyleUI = UI
-	environment.CascadeStyleUIApp = app
-	environment.CascadeStyleUIHandles = handles
+	environment.Myui = UI
+	environment.MyuiApp = app
+	environment.MyuiHandles = handles
 end)
 
-print("[CascadeStyleUI] Loaded", UI.Version, "with Cascade", UI.CascadeVersion)
+print("[Myui] Loaded", UI.Version, "with Cascade", UI.CascadeVersion)
