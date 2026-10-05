@@ -4,7 +4,7 @@
 local UI = {
 	CascadeVersion = "v1.4.0",
 	Version = "1.4.0",
-	BuildId = "1.4.0-colored-search-icons-fix5",
+	BuildId = "1.4.0-auto-dark-startup-fix7",
 }
 
 local RELEASE_URL = "https://github.com/cascadeui/Cascade/releases/download/v1.4.0/dist.luau"
@@ -707,18 +707,11 @@ local function configureSearchSuggestions(window, search, tabs)
 		local title = readTabTitle(tab)
 		local structures = tab.Structures
 		local symbol = structures and structures.Symbol
-		local tileColor = Color3.fromRGB(0, 122, 255)
-		local iconImage = ""
+		local sourceIconTile
 		if symbol then
-			iconImage = symbol.Image or ""
-			local iconTile = symbol.Parent
-			if iconTile and iconTile:IsA("GuiObject") then
-				local savedColor = iconTile:GetAttribute("CascadeIconColor")
-				if typeof(savedColor) == "Color3" then
-					tileColor = savedColor
-				else
-					tileColor = iconTile.BackgroundColor3
-				end
+			local candidate = symbol.Parent
+			if candidate and candidate:IsA("GuiObject") and candidate.Name == "CascadeColorIconTile" then
+				sourceIconTile = candidate
 			end
 		end
 
@@ -734,36 +727,43 @@ local function configureSearchSuggestions(window, search, tabs)
 			ZIndex = 203,
 		})
 		make(button, "UICorner", { CornerRadius = UDim.new(0, 7) })
-		local iconTile = make(button, "Frame", {
-			Name = "IconTile",
-			BackgroundColor3 = Color3.new(1, 1, 1),
-			BorderSizePixel = 0,
-			Position = UDim2.fromOffset(8, 6),
-			Size = UDim2.fromOffset(27, 27),
-			ZIndex = 204,
-		})
-		make(iconTile, "UICorner", { CornerRadius = UDim.new(0, 7) })
-		make(iconTile, "UIGradient", {
-			Name = "CascadeSuggestionIconDepth",
-			Rotation = 90,
-			Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, tileColor:Lerp(Color3.new(1, 1, 1), 0.28)),
-				ColorSequenceKeypoint.new(0.48, tileColor),
-				ColorSequenceKeypoint.new(1, tileColor:Lerp(Color3.new(0, 0, 0), 0.2)),
-			}),
-		})
-		if iconImage ~= "" then
-			local icon = make(iconTile, "ImageLabel", {
-				Name = "Icon",
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				BackgroundTransparency = 1,
-				Image = iconImage,
-				ImageColor3 = Color3.new(1, 1, 1),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.fromOffset(17, 17),
-				ZIndex = 205,
+		local iconTile
+		if sourceIconTile then
+			-- Clone the real sidebar tile so Search uses the exact same SF Symbol,
+			-- glossy gradient, outline, and icon colour as its matching tab.
+			iconTile = sourceIconTile:Clone()
+			iconTile.Name = "IconTile"
+			iconTile.Parent = button
+			local iconSize = iconTile.Size.X.Offset
+			iconTile.Position = UDim2.fromOffset(8, math.floor((39 - iconSize) / 2))
+			iconTile.LayoutOrder = 0
+			iconTile.ZIndex = 204
+			for _, descendant in ipairs(iconTile:GetDescendants()) do
+				if descendant:IsA("GuiObject") then
+					descendant.ZIndex += 201
+				end
+			end
+		else
+			-- Keep an icon fallback for Cascade tabs without a styled sidebar tile.
+			iconTile = make(button, "Frame", {
+				Name = "IconTile",
+				BackgroundColor3 = Color3.fromRGB(0, 122, 255),
+				BorderSizePixel = 0,
+				Position = UDim2.fromOffset(8, 6),
+				Size = UDim2.fromOffset(26, 26),
+				ZIndex = 204,
 			})
-			icon.ScaleType = Enum.ScaleType.Fit
+			make(iconTile, "UICorner", { CornerRadius = UDim.new(0, 7) })
+			local fallbackIcon = symbol and symbol:Clone()
+			if fallbackIcon then
+				fallbackIcon.Name = "Icon"
+				fallbackIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+				fallbackIcon.BackgroundTransparency = 1
+				fallbackIcon.Position = UDim2.fromScale(0.5, 0.5)
+				fallbackIcon.Size = UDim2.fromOffset(16, 16)
+				fallbackIcon.ZIndex = 205
+				fallbackIcon.Parent = iconTile
+			end
 		end
 		make(button, "TextLabel", {
 			Name = "Title",
@@ -1859,7 +1859,7 @@ local function makeFolderColorPicker(form, window, state)
 		if y + menuHeight > rootSize.Y - 8 then
 			y = math.max(8, buttonPosition.Y - rootPosition.Y - menuHeight - 5)
 		end
-		local dark = state.Appearance == 3
+		local dark = state.Appearance ~= 2
 		local backdrop = make(root, "TextButton", {
 			Name = "FolderColorMenuBackdrop",
 			Active = true,
@@ -2041,7 +2041,7 @@ function UI.CreateSystemSettings(cascade, options)
 
 	local app = cascade.New({
 		WindowPill = true,
-		Theme = cascade.Themes.Light,
+		Theme = cascade.Themes.Dark,
 		Accent = cascade.Accents.Blue or cascade.Accents.Red,
 		DisplayOrder = 80,
 		ResetOnSpawn = false,
@@ -2068,7 +2068,7 @@ function UI.CreateSystemSettings(cascade, options)
 	local state = {
 		TextHighlight = 1,
 		IconStyle = 1,
-		Appearance = 2,
+		Appearance = 1,
 		LiquidGlass = 1,
 		Accent = "Multicolor",
 		AccentColor = SYSTEM_BLUE,
@@ -2081,7 +2081,7 @@ function UI.CreateSystemSettings(cascade, options)
 	local signInLogoImage
 	local tabIconStyle
 	local function applyGlassStyle()
-		local dark = state.Appearance == 3
+		local dark = state.Appearance ~= 2
 		local base = dark and Color3.fromRGB(49, 50, 54) or Color3.fromRGB(233, 234, 237)
 		local accentColor = state.WallpaperTint and state.AccentColor or base
 		accentColor = accentColor or SYSTEM_BLUE
@@ -2102,7 +2102,7 @@ function UI.CreateSystemSettings(cascade, options)
 	end
 	local function setAppearance(modeIndex)
 		state.Appearance = modeIndex
-		local dark = modeIndex == 3
+		local dark = modeIndex ~= 2
 		local theme = dark and cascade.Themes.Dark or cascade.Themes.Light
 		app.Theme = theme
 		applyGlassStyle()
@@ -2285,7 +2285,7 @@ function UI.CreateSystemSettings(cascade, options)
 			{ Label = "Light", Icon = cascade.Symbols.sunMax, Mode = "light", Preview = true },
 			{ Label = "Dark", Icon = cascade.Symbols.sunMax, Mode = "dark", Preview = true },
 		},
-		2,
+		1,
 		82,
 		SYSTEM_BLUE,
 		function(index)
