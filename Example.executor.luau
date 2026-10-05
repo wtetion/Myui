@@ -14,7 +14,7 @@ local function readLibrarySource()
 		end
 	end
 
-	if type(LIBRARY_URL) == "string" and LIBRARY_URL:match("^https?://") then
+	if type(LIBRARY_URL) == "string" and LIBRARY_URL:match("https://raw.githubusercontent.com/wtetion/Myui/refs/heads/main/Ui-library.luau") then
 		local requests = {
 			function()
 				return game:HttpGetAsync(LIBRARY_URL)
