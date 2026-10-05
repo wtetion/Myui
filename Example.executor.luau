@@ -5,7 +5,7 @@
 local LIBRARY_URL = "https://raw.githubusercontent.com/wtetion/Myui/refs/heads/main/Ui-library.luau"
 local LIBRARY_FILE = "Ui-library.luau"
 local SIGN_IN_IMAGE = "rbxassetid://86949082023913"
-local REQUIRED_BUILD = "1.4.0-windui-popovers-colorwheel-search"
+local REQUIRED_BUILD = "1.4.0-windui-icon-gloss-accent-fix3"
 
 if type(loadstring) ~= "function" then
 	error("[Myui Example] This executor must provide loadstring.", 0)
