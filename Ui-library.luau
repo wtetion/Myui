@@ -3,12 +3,13 @@
 
 local UI = {
 	CascadeVersion = "v1.4.0",
-	Version = "1.1.0",
-	BuildId = "1.1.0-executor-loadstring",
+	Version = "1.3.0",
+	BuildId = "1.3.0-cascade-icons-profile-image",
 }
 
 local RELEASE_URL = "https://github.com/cascadeui/Cascade/releases/download/v1.4.0/dist.luau"
 local CASCADE_CACHE_KEY = "__CascadeStyleUI_Cascade_v1_4_0"
+local DEFAULT_SIGN_IN_IMAGE = "rbxassetid://86949082023913"
 
 UI.CascadeURL = RELEASE_URL
 
@@ -65,9 +66,9 @@ function UI.LoadCascade(url)
 
 	url = url or UI.CascadeURL or RELEASE_URL
 	local source = fetchCascadeSource(url)
-	local compileOk, chunkOrError = pcall(loadstring, source, "@Cascade-v1.4.0")
+	local compileOk, chunkOrError, compileError = pcall(loadstring, source, "@Cascade-v1.4.0")
 	if not compileOk or type(chunkOrError) ~= "function" then
-		error("[CascadeStyleUI] Cascade v1.4.0 could not be compiled: " .. tostring(chunkOrError), 2)
+		error("[CascadeStyleUI] Cascade v1.4.0 could not be compiled: " .. tostring(compileError or chunkOrError), 2)
 	end
 
 	local runOk, cascade = pcall(chunkOrError)
@@ -154,47 +155,40 @@ local function addAccountSubtitle(tab, cascade, app, options)
 	body.Size = UDim2.new(1, 0, 0, 50)
 	leading.Size = UDim2.new(1, -34, 0, 0)
 	symbol.Visible = true
-	symbol.Image = cascade.Symbols.personCropCircle
-	symbol.ImageColor3 = Color3.fromRGB(130, 130, 135)
 	symbol.Size = UDim2.fromOffset(30, 30)
 	title.Visible = false
 
-	local logoImage
+	local logoImage = options.SignInLogo
 	local logoImageLabel
-	if options.SignInLogo ~= false then
-		logoImage = options.SignInLogo
-		local useDefaultLogo = logoImage == nil
-		if useDefaultLogo then
-			logoImage = cascade.Symbols.appleLogo
+	if logoImage == false then
+		symbol.Image = cascade.Symbols.personCropCircle
+		symbol.ImageColor3 = Color3.fromRGB(130, 130, 135)
+	else
+		logoImage = logoImage or DEFAULT_SIGN_IN_IMAGE
+		symbol.Name = "SignInProfileImage"
+		symbol.Image = logoImage
+		symbol.ImageColor3 = Color3.new(1, 1, 1)
+		symbol.ImageTransparency = 0
+		symbol.BackgroundTransparency = 1
+		symbol.ScaleType = Enum.ScaleType.Fit
+		symbol.ClipsDescendants = true
+		local avatarCorner = symbol:FindFirstChildOfClass("UICorner")
+		if avatarCorner then
+			avatarCorner.CornerRadius = UDim.new(1, 0)
+		else
+			make(symbol, "UICorner", { CornerRadius = UDim.new(1, 0) })
 		end
-		if type(logoImage) == "string" and logoImage ~= "" then
-			local badge = make(symbol, "Frame", {
-				Name = "SignInLogoBadge",
-				AnchorPoint = Vector2.new(1, 1),
-				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-				BorderSizePixel = 0,
-				Position = UDim2.new(1, 1, 1, 1),
-				Size = UDim2.fromOffset(16, 16),
-				ZIndex = symbol.ZIndex + 1,
-			})
-			make(badge, "UICorner", { CornerRadius = UDim.new(1, 0) })
-			make(badge, "UIStroke", {
-				Color = Color3.fromRGB(215, 216, 220),
-				Transparency = 0.15,
-				Thickness = 1,
-			})
-			logoImageLabel = make(badge, "ImageLabel", {
-				Name = "Logo",
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				BackgroundTransparency = 1,
-				Image = logoImage,
-				ImageColor3 = options.SignInLogoColor or (useDefaultLogo and Color3.fromRGB(40, 40, 43) or Color3.new(1, 1, 1)),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.fromOffset(10, 10),
-				ZIndex = badge.ZIndex + 1,
-			})
-			logoImageLabel.ScaleType = Enum.ScaleType.Fit
-		end
+		symbol:GetPropertyChangedSignal("ImageColor3"):Connect(function()
+			if symbol.Image == logoImage and symbol.ImageColor3 ~= Color3.new(1, 1, 1) then
+				symbol.ImageColor3 = Color3.new(1, 1, 1)
+			end
+		end)
+		symbol:GetPropertyChangedSignal("ImageTransparency"):Connect(function()
+			if symbol.Image == logoImage and symbol.ImageTransparency ~= 0 then
+				symbol.ImageTransparency = 0
+			end
+		end)
+		logoImageLabel = symbol
 	end
 
 	local stack = make(leading, "Frame", {
@@ -246,6 +240,8 @@ local function addSoftwareUpdateBadge(tab)
 end
 
 local function styleTabIcons(tabs)
+	-- Keep Cascade's SF Symbols as the foreground glyphs, using the colored,
+	-- rounded icon tiles shown in Cascade's Gallery navigation examples.
 	local colors = {
 		SoftwareUpdate = Color3.fromRGB(78, 122, 218),
 		WiFi = Color3.fromRGB(0, 122, 255),
@@ -398,6 +394,321 @@ local function styleTabIcons(tabs)
 	style:SetValue(1)
 	style:SetSize(2)
 	return style
+end
+
+local function configureSearchSuggestions(window, search, tabs)
+	local root = window.Structures.Body
+	local body = search.Body.__instance
+	local tweenService = game:GetService("TweenService")
+	local focusBlue = Color3.fromRGB(72, 133, 255)
+	local isFocused = false
+	local choosingSuggestion = false
+
+	search.Field.PlaceholderText = "Search"
+	search.Field.TextXAlignment = Enum.TextXAlignment.Left
+	local searchIcon = body:FindFirstChild("ImageLabel")
+	if searchIcon then
+		searchIcon.LayoutOrder = 0
+		searchIcon.Size = UDim2.fromOffset(14, 14)
+		searchIcon.ImageColor3 = Color3.fromRGB(128, 132, 139)
+	end
+
+	local focusStroke = body:FindFirstChildOfClass("UIStroke")
+	if not focusStroke then
+		focusStroke = make(body, "UIStroke", {
+			Color = focusBlue,
+			Thickness = 2,
+			Transparency = 1,
+		})
+	end
+	focusStroke.Color = focusBlue
+	focusStroke.Thickness = 2
+	focusStroke.Transparency = 1
+
+	local glowStroke = make(body, "UIStroke", {
+		Name = "SearchFocusGlow",
+		Color = focusBlue,
+		Thickness = 7,
+		Transparency = 1,
+	})
+
+	local shadow = make(root, "Frame", {
+		Name = "SearchSuggestionsShadow",
+		BackgroundColor3 = Color3.fromRGB(20, 24, 32),
+		BackgroundTransparency = 0.88,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(190, 250),
+		Visible = false,
+		ZIndex = 90,
+	})
+	make(shadow, "UICorner", { CornerRadius = UDim.new(0, 12) })
+
+	local panel = make(root, "Frame", {
+		Name = "SearchSuggestions",
+		BackgroundColor3 = Color3.fromRGB(247, 247, 249),
+		BackgroundTransparency = 0.02,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.fromOffset(190, 250),
+		Visible = false,
+		ZIndex = 91,
+	})
+	make(panel, "UICorner", { CornerRadius = UDim.new(0, 12) })
+	make(panel, "UIStroke", {
+		Color = Color3.fromRGB(190, 193, 200),
+		Transparency = 0.18,
+		Thickness = 1,
+	})
+
+	local header = make(panel, "TextLabel", {
+		Name = "SuggestionsHeader",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		FontFace = Font.new("rbxassetid://12187365364"),
+		Position = UDim2.fromOffset(14, 7),
+		Size = UDim2.new(1, -28, 0, 21),
+		Text = "Suggestions",
+		TextColor3 = Color3.fromRGB(147, 149, 155),
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 93,
+	})
+
+	local list = make(panel, "ScrollingFrame", {
+		Name = "SuggestionList",
+		Active = true,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		CanvasSize = UDim2.new(),
+		Position = UDim2.fromOffset(8, 29),
+		ScrollBarThickness = 0,
+		Size = UDim2.new(1, -16, 1, -36),
+		ZIndex = 92,
+	})
+	make(list, "UIListLayout", {
+		Name = "SuggestionLayout",
+		Padding = UDim.new(0, 3),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	})
+
+	local suggestedKeys = { "Displays", "Battery", "PrivacySecurity", "Bluetooth", "DesktopDock" }
+	local function updatePosition(resultCount)
+		local rootPosition = root.AbsolutePosition
+		local searchPosition = body.AbsolutePosition
+		local searchSize = body.AbsoluteSize
+		local x = math.max(7, searchPosition.X - rootPosition.X - 8)
+		local y = searchPosition.Y - rootPosition.Y + searchSize.Y + 3
+		local width = math.max(190, searchSize.X + 18)
+		local widthLimit = math.max(190, root.AbsoluteSize.X - x - 8)
+		width = math.min(width, widthLimit)
+		local rows = math.min(math.max(resultCount, 1), 6)
+		local height = 38 + rows * 42
+
+		shadow.Position = UDim2.fromOffset(x + 1, y + 3)
+		shadow.Size = UDim2.fromOffset(width, height)
+		panel.Position = UDim2.fromOffset(x, y)
+		panel.Size = UDim2.fromOffset(width, height)
+	end
+
+	local function setFocusVisual(active)
+		local focusGoals = active and {
+			Color = focusBlue,
+			Thickness = 2,
+			Transparency = 0.02,
+		} or {
+			Color = Color3.fromRGB(190, 193, 200),
+			Thickness = 1,
+			Transparency = 0.28,
+		}
+		local glowGoals = active and {
+			Color = focusBlue,
+			Thickness = 7,
+			Transparency = 0.78,
+		} or {
+			Color = focusBlue,
+			Thickness = 7,
+			Transparency = 1,
+		}
+		local tweenInfo = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		pcall(function()
+			tweenService:Create(focusStroke, tweenInfo, focusGoals):Play()
+			tweenService:Create(glowStroke, tweenInfo, glowGoals):Play()
+		end)
+	end
+
+	local function clearResults()
+		for _, child in ipairs(list:GetChildren()) do
+			if child:IsA("GuiButton") or child.Name == "NoResults" then
+				child:Destroy()
+			end
+		end
+	end
+
+	local function readTabTitle(tab)
+		local title = tab and tab.Structures and tab.Structures.Title
+		return title and tostring(title.Text) or "Settings"
+	end
+
+	local function buildResult(key, tab, order)
+		local title = readTabTitle(tab)
+		local structures = tab.Structures
+		local symbol = structures and structures.Symbol
+		local tileColor = Color3.fromRGB(0, 122, 255)
+		local iconImage = ""
+		if symbol then
+			iconImage = symbol.Image or ""
+			local iconTile = symbol.Parent
+			if iconTile and iconTile:IsA("GuiObject") then
+				tileColor = iconTile.BackgroundColor3
+			end
+		end
+
+		local button = make(list, "TextButton", {
+			Name = "Suggestion_" .. key,
+			AutoButtonColor = false,
+			BackgroundColor3 = Color3.fromRGB(232, 235, 240),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			LayoutOrder = order,
+			Size = UDim2.new(1, 0, 0, 39),
+			Text = "",
+			ZIndex = 94,
+		})
+		make(button, "UICorner", { CornerRadius = UDim.new(0, 7) })
+		local iconTile = make(button, "Frame", {
+			Name = "IconTile",
+			BackgroundColor3 = tileColor,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(8, 6),
+			Size = UDim2.fromOffset(27, 27),
+			ZIndex = 95,
+		})
+		make(iconTile, "UICorner", { CornerRadius = UDim.new(0, 7) })
+		if iconImage ~= "" then
+			local icon = make(iconTile, "ImageLabel", {
+				Name = "Icon",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundTransparency = 1,
+				Image = iconImage,
+				ImageColor3 = Color3.new(1, 1, 1),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(17, 17),
+				ZIndex = 96,
+			})
+			icon.ScaleType = Enum.ScaleType.Fit
+		end
+		make(button, "TextLabel", {
+			Name = "Title",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			FontFace = Font.new("rbxassetid://12187365364"),
+			Position = UDim2.fromOffset(47, 0),
+			Size = UDim2.new(1, -55, 1, 0),
+			Text = title,
+			TextColor3 = Color3.fromRGB(35, 36, 39),
+			TextSize = 15,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 96,
+		})
+
+		button.MouseEnter:Connect(function()
+			button.BackgroundTransparency = 0.35
+		end)
+		button.MouseLeave:Connect(function()
+			button.BackgroundTransparency = 1
+		end)
+		button.Activated:Connect(function()
+			choosingSuggestion = true
+			isFocused = false
+			panel.Visible = false
+			shadow.Visible = false
+			search.Field.Text = ""
+			tab.Selected = true
+			choosingSuggestion = false
+			setFocusVisual(false)
+		end)
+	end
+
+	local function renderSuggestions()
+		clearResults()
+		local query = tostring(search.Field.Text or ""):lower()
+		query = query:match("^%s*(.-)%s*$") or query
+		local results = {}
+
+		if query == "" then
+			for _, key in ipairs(suggestedKeys) do
+				if tabs[key] then
+					table.insert(results, { Key = key, Tab = tabs[key] })
+				end
+			end
+		else
+			for key, tab in pairs(tabs) do
+				local title = readTabTitle(tab)
+				if title:lower():find(query, 1, true) then
+					table.insert(results, { Key = key, Tab = tab, Title = title })
+				end
+			end
+			table.sort(results, function(left, right)
+				return left.Title:lower() < right.Title:lower()
+			end)
+		end
+
+		if #results == 0 then
+			make(list, "TextLabel", {
+				Name = "NoResults",
+				BackgroundTransparency = 1,
+				FontFace = Font.new("rbxassetid://12187365364"),
+				LayoutOrder = 1,
+				Size = UDim2.new(1, 0, 0, 36),
+				Text = "No Results",
+				TextColor3 = Color3.fromRGB(147, 149, 155),
+				TextSize = 14,
+				ZIndex = 94,
+			})
+		end
+		for index, result in ipairs(results) do
+			buildResult(result.Key, result.Tab, index)
+		end
+		updatePosition(#results)
+		panel.Visible = isFocused
+		shadow.Visible = isFocused
+	end
+
+	search.Field.Focused:Connect(function()
+		isFocused = true
+		setFocusVisual(true)
+		renderSuggestions()
+	end)
+	search.Field.FocusLost:Connect(function()
+		isFocused = false
+		setFocusVisual(false)
+		task.delay(0.16, function()
+			if not choosingSuggestion then
+				panel.Visible = false
+				shadow.Visible = false
+			end
+		end)
+	end)
+	search.Field:GetPropertyChangedSignal("Text"):Connect(function()
+		if isFocused then
+			renderSuggestions()
+		end
+	end)
+	body:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+		updatePosition(5)
+	end)
+	body:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		updatePosition(5)
+	end)
+	root:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+		updatePosition(5)
+	end)
+	root:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		updatePosition(5)
+	end)
+	updatePosition(5)
 end
 
 local function refreshCard(card, selected, accent)
@@ -1332,6 +1643,7 @@ function UI.CreateSystemSettings(cascade, options)
 	end
 	state.OnAccentChanged(state.AccentColor or Color3.fromRGB(255, 69, 58))
 	applyGlassStyle()
+	configureSearchSuggestions(window, searchField, tabs)
 
 	return app, {
 		Window = window,
