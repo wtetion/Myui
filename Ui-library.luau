@@ -3,13 +3,14 @@
 
 local UI = {
 	CascadeVersion = "v1.4.0",
-	Version = "1.3.0",
-	BuildId = "1.3.0-cascade-icons-profile-image",
+	Version = "1.4.0",
+	BuildId = "1.4.0-windui-popovers-colorwheel-search",
 }
 
 local RELEASE_URL = "https://github.com/cascadeui/Cascade/releases/download/v1.4.0/dist.luau"
 local CASCADE_CACHE_KEY = "__CascadeStyleUI_Cascade_v1_4_0"
 local DEFAULT_SIGN_IN_IMAGE = "rbxassetid://86949082023913"
+local SYSTEM_BLUE = Color3.fromRGB(0, 122, 255)
 
 UI.CascadeURL = RELEASE_URL
 
@@ -103,6 +104,16 @@ local function pageForm(tab, title, subtitle)
 end
 
 local function make(parent, className, properties)
+	if typeof(parent) ~= "Instance" then
+		local ok, instance = pcall(function()
+			return parent and parent.__instance
+		end)
+		if ok and typeof(instance) == "Instance" then
+			parent = instance
+		else
+			error("[CascadeStyleUI] Expected an Instance parent for " .. className .. ".", 3)
+		end
+	end
 	local object = Instance.new(className)
 	for key, value in pairs(properties or {}) do
 		object[key] = value
@@ -119,13 +130,17 @@ end
 
 local function moveSearchIntoSidebar(window)
 	local search = window.Structures.Titlebar.SearchField
-	local sidebar = window.Structures.SidebarList
+	local sidebar = window.Structures.Sidebar
+	local sidebarList = window.Structures.SidebarList
 
 	-- Keep Cascade's own search listener and move its actual TextField to the
-	-- sidebar, where it appears under the window controls like the reference.
+	-- fixed sidebar area below the traffic-light controls. Keeping it outside the
+	-- ScrollingFrame prevents its focus glow from being clipped at the top edge.
 	search.Body.AutomaticSize = Enum.AutomaticSize.None
-	search.Body.Size = UDim2.new(1, 0, 0, 32)
+	search.Body.Position = UDim2.fromOffset(8, 52)
+	search.Body.Size = UDim2.new(1, -16, 0, 32)
 	search.Body.LayoutOrder = -1000
+	search.Body.ClipsDescendants = false
 	search.Field.AutomaticSize = Enum.AutomaticSize.None
 	search.Field.Size = UDim2.new(1, -34, 0, 22)
 	search.Field.LayoutOrder = 2
@@ -139,9 +154,12 @@ local function moveSearchIntoSidebar(window)
 	end
 	local stroke = search.Body:FindFirstChildOfClass("UIStroke")
 	if stroke then
+		stroke.Name = "SearchBaseStroke"
 		stroke.Transparency = 1
 	end
 	search.Body.Parent = sidebar
+	sidebarList.Position = UDim2.fromOffset(0, 92)
+	sidebarList.Size = UDim2.new(1, 0, 1, -92)
 	return search
 end
 
@@ -363,7 +381,7 @@ local function styleTabIcons(tabs)
 					entry.Stroke.Transparency = 0.5
 					glyphColor = entry.BaseColor
 				else
-					local accent = self.Accent or Color3.fromRGB(255, 69, 58)
+					local accent = self.Accent or SYSTEM_BLUE
 					tile.BackgroundColor3 = entry.BaseColor:Lerp(accent, 0.36)
 					tile.BackgroundTransparency = 0
 					entry.Stroke.Transparency = 1
@@ -397,8 +415,13 @@ local function styleTabIcons(tabs)
 end
 
 local function configureSearchSuggestions(window, search, tabs)
-	local root = window.Structures.Body
-	local body = search.Body.__instance
+	local rootStructure = window.Structures.Body
+	local root = typeof(rootStructure) == "Instance" and rootStructure or rootStructure and rootStructure.__instance
+	local bodyStructure = search.Body
+	local body = typeof(bodyStructure) == "Instance" and bodyStructure or bodyStructure and bodyStructure.__instance
+	if not root or not body then
+		error("[CascadeStyleUI] Cascade v1.4.0 did not expose the window and search instances.", 2)
+	end
 	local tweenService = game:GetService("TweenService")
 	local focusBlue = Color3.fromRGB(72, 133, 255)
 	local isFocused = false
@@ -413,9 +436,10 @@ local function configureSearchSuggestions(window, search, tabs)
 		searchIcon.ImageColor3 = Color3.fromRGB(128, 132, 139)
 	end
 
-	local focusStroke = body:FindFirstChildOfClass("UIStroke")
+	local focusStroke = body:FindFirstChild("SearchFocusStroke")
 	if not focusStroke then
 		focusStroke = make(body, "UIStroke", {
+			Name = "SearchFocusStroke",
 			Color = focusBlue,
 			Thickness = 2,
 			Transparency = 1,
@@ -425,12 +449,15 @@ local function configureSearchSuggestions(window, search, tabs)
 	focusStroke.Thickness = 2
 	focusStroke.Transparency = 1
 
-	local glowStroke = make(body, "UIStroke", {
-		Name = "SearchFocusGlow",
-		Color = focusBlue,
-		Thickness = 7,
-		Transparency = 1,
-	})
+	local glowStroke = body:FindFirstChild("SearchFocusGlow")
+	if not glowStroke then
+		glowStroke = make(body, "UIStroke", {
+			Name = "SearchFocusGlow",
+			Color = focusBlue,
+			Thickness = 7,
+			Transparency = 1,
+		})
+	end
 
 	local shadow = make(root, "Frame", {
 		Name = "SearchSuggestionsShadow",
@@ -440,21 +467,22 @@ local function configureSearchSuggestions(window, search, tabs)
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(190, 250),
 		Visible = false,
-		ZIndex = 90,
+		ZIndex = 199,
 	})
 	make(shadow, "UICorner", { CornerRadius = UDim.new(0, 12) })
 
 	local panel = make(root, "Frame", {
 		Name = "SearchSuggestions",
 		BackgroundColor3 = Color3.fromRGB(247, 247, 249),
-		BackgroundTransparency = 0.02,
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		Position = UDim2.fromOffset(0, 0),
 		Size = UDim2.fromOffset(190, 250),
 		Visible = false,
-		ZIndex = 91,
+		ZIndex = 200,
 	})
 	make(panel, "UICorner", { CornerRadius = UDim.new(0, 12) })
+	local panelScale = make(panel, "UIScale", { Scale = 0.94 })
 	make(panel, "UIStroke", {
 		Color = Color3.fromRGB(190, 193, 200),
 		Transparency = 0.18,
@@ -472,7 +500,7 @@ local function configureSearchSuggestions(window, search, tabs)
 		TextColor3 = Color3.fromRGB(147, 149, 155),
 		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 93,
+		ZIndex = 202,
 	})
 
 	local list = make(panel, "ScrollingFrame", {
@@ -485,7 +513,7 @@ local function configureSearchSuggestions(window, search, tabs)
 		Position = UDim2.fromOffset(8, 29),
 		ScrollBarThickness = 0,
 		Size = UDim2.new(1, -16, 1, -36),
-		ZIndex = 92,
+		ZIndex = 201,
 	})
 	make(list, "UIListLayout", {
 		Name = "SuggestionLayout",
@@ -494,11 +522,12 @@ local function configureSearchSuggestions(window, search, tabs)
 	})
 
 	local suggestedKeys = { "Displays", "Battery", "PrivacySecurity", "Bluetooth", "DesktopDock" }
+	local popupShown = false
 	local function updatePosition(resultCount)
 		local rootPosition = root.AbsolutePosition
 		local searchPosition = body.AbsolutePosition
 		local searchSize = body.AbsoluteSize
-		local x = math.max(7, searchPosition.X - rootPosition.X - 8)
+		local x = math.max(7, searchPosition.X - rootPosition.X)
 		local y = searchPosition.Y - rootPosition.Y + searchSize.Y + 3
 		local width = math.max(190, searchSize.X + 18)
 		local widthLimit = math.max(190, root.AbsoluteSize.X - x - 8)
@@ -510,6 +539,63 @@ local function configureSearchSuggestions(window, search, tabs)
 		shadow.Size = UDim2.fromOffset(width, height)
 		panel.Position = UDim2.fromOffset(x, y)
 		panel.Size = UDim2.fromOffset(width, height)
+	end
+
+	local function showDropdown()
+		if popupShown then
+			panel.Visible = true
+			shadow.Visible = true
+			return
+		end
+		popupShown = true
+		local targetPosition = panel.Position
+		local shadowTarget = shadow.Position
+		panel.Visible = true
+		shadow.Visible = true
+		panel.Position = UDim2.new(targetPosition.X.Scale, targetPosition.X.Offset, targetPosition.Y.Scale, targetPosition.Y.Offset - 9)
+		shadow.Position = UDim2.new(shadowTarget.X.Scale, shadowTarget.X.Offset, shadowTarget.Y.Scale, shadowTarget.Y.Offset - 7)
+		panel.BackgroundTransparency = 1
+		shadow.BackgroundTransparency = 1
+		panelScale.Scale = 0.94
+		local tweenInfo = TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+		tweenService:Create(panel, tweenInfo, {
+			Position = targetPosition,
+			BackgroundTransparency = 0.02,
+		}):Play()
+		tweenService:Create(shadow, tweenInfo, {
+			Position = shadowTarget,
+			BackgroundTransparency = 0.88,
+		}):Play()
+		tweenService:Create(panelScale, tweenInfo, { Scale = 1 }):Play()
+	end
+
+	local function hideDropdown()
+		if not popupShown then
+			panel.Visible = false
+			shadow.Visible = false
+			return
+		end
+		popupShown = false
+		local currentPosition = panel.Position
+		local currentShadowPosition = shadow.Position
+		local targetPosition = UDim2.new(currentPosition.X.Scale, currentPosition.X.Offset, currentPosition.Y.Scale, currentPosition.Y.Offset - 7)
+		local shadowTarget = UDim2.new(currentShadowPosition.X.Scale, currentShadowPosition.X.Offset, currentShadowPosition.Y.Scale, currentShadowPosition.Y.Offset - 5)
+		local tweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		tweenService:Create(panel, tweenInfo, {
+			Position = targetPosition,
+			BackgroundTransparency = 1,
+		}):Play()
+		tweenService:Create(shadow, tweenInfo, {
+			Position = shadowTarget,
+			BackgroundTransparency = 1,
+		}):Play()
+		tweenService:Create(panelScale, tweenInfo, { Scale = 0.96 }):Play()
+		task.delay(0.13, function()
+			if not popupShown then
+				panel.Visible = false
+				shadow.Visible = false
+			end
+		end)
 	end
 
 	local function setFocusVisual(active)
@@ -574,7 +660,7 @@ local function configureSearchSuggestions(window, search, tabs)
 			LayoutOrder = order,
 			Size = UDim2.new(1, 0, 0, 39),
 			Text = "",
-			ZIndex = 94,
+			ZIndex = 203,
 		})
 		make(button, "UICorner", { CornerRadius = UDim.new(0, 7) })
 		local iconTile = make(button, "Frame", {
@@ -583,7 +669,7 @@ local function configureSearchSuggestions(window, search, tabs)
 			BorderSizePixel = 0,
 			Position = UDim2.fromOffset(8, 6),
 			Size = UDim2.fromOffset(27, 27),
-			ZIndex = 95,
+			ZIndex = 204,
 		})
 		make(iconTile, "UICorner", { CornerRadius = UDim.new(0, 7) })
 		if iconImage ~= "" then
@@ -595,7 +681,7 @@ local function configureSearchSuggestions(window, search, tabs)
 				ImageColor3 = Color3.new(1, 1, 1),
 				Position = UDim2.fromScale(0.5, 0.5),
 				Size = UDim2.fromOffset(17, 17),
-				ZIndex = 96,
+				ZIndex = 205,
 			})
 			icon.ScaleType = Enum.ScaleType.Fit
 		end
@@ -610,7 +696,7 @@ local function configureSearchSuggestions(window, search, tabs)
 			TextColor3 = Color3.fromRGB(35, 36, 39),
 			TextSize = 15,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			ZIndex = 96,
+			ZIndex = 205,
 		})
 
 		button.MouseEnter:Connect(function()
@@ -622,8 +708,7 @@ local function configureSearchSuggestions(window, search, tabs)
 		button.Activated:Connect(function()
 			choosingSuggestion = true
 			isFocused = false
-			panel.Visible = false
-			shadow.Visible = false
+			hideDropdown()
 			search.Field.Text = ""
 			tab.Selected = true
 			choosingSuggestion = false
@@ -665,15 +750,18 @@ local function configureSearchSuggestions(window, search, tabs)
 				Text = "No Results",
 				TextColor3 = Color3.fromRGB(147, 149, 155),
 				TextSize = 14,
-				ZIndex = 94,
+				ZIndex = 203,
 			})
 		end
 		for index, result in ipairs(results) do
 			buildResult(result.Key, result.Tab, index)
 		end
 		updatePosition(#results)
-		panel.Visible = isFocused
-		shadow.Visible = isFocused
+		if isFocused then
+			showDropdown()
+		else
+			hideDropdown()
+		end
 	end
 
 	search.Field.Focused:Connect(function()
@@ -686,8 +774,7 @@ local function configureSearchSuggestions(window, search, tabs)
 		setFocusVisual(false)
 		task.delay(0.16, function()
 			if not choosingSuggestion then
-				panel.Visible = false
-				shadow.Visible = false
+				hideDropdown()
 			end
 		end)
 	end)
@@ -711,6 +798,101 @@ local function configureSearchSuggestions(window, search, tabs)
 	updatePosition(5)
 end
 
+local function animateSearchEntrance(search)
+	local body = search and search.Body
+	if not body or not body.Parent then
+		return
+	end
+	local tweenService = game:GetService("TweenService")
+	local targetPosition = body.Position
+	local targetTransparency = body.BackgroundTransparency
+	local startPosition = UDim2.new(targetPosition.X.Scale, targetPosition.X.Offset, targetPosition.Y.Scale, targetPosition.Y.Offset - 10)
+	local scale = body:FindFirstChild("SearchEntranceScale") or make(body, "UIScale", {
+		Name = "SearchEntranceScale",
+		Scale = 0.96,
+	})
+	body.Position = startPosition
+	body.BackgroundTransparency = math.max(targetTransparency, 0.58)
+	tweenService:Create(body, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Position = targetPosition,
+		BackgroundTransparency = targetTransparency,
+	}):Play()
+	tweenService:Create(scale, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Scale = 1,
+	}):Play()
+end
+
+local function configureTitlebarNavigation(window)
+	local titlebar = window.Structures.Titlebar
+	local group = titlebar and titlebar.NavigationButtons
+	local back = titlebar and titlebar.Back
+	local forward = titlebar and titlebar.Forward
+	if not group or not back or not forward then
+		return function() end
+	end
+
+	group.AutomaticSize = Enum.AutomaticSize.None
+	group.Size = UDim2.fromOffset(66, 32)
+	group.BackgroundTransparency = 0
+	group.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	group.BorderSizePixel = 0
+	local corner = group:FindFirstChildOfClass("UICorner")
+	if corner then
+		corner.CornerRadius = UDim.new(1, 0)
+	else
+		make(group, "UICorner", { CornerRadius = UDim.new(1, 0) })
+	end
+	local outline = group:FindFirstChildOfClass("UIStroke")
+	if not outline then
+		outline = make(group, "UIStroke", {
+			Color = Color3.fromRGB(222, 224, 230),
+			Transparency = 0.15,
+			Thickness = 1,
+		})
+	end
+	local layout = group:FindFirstChildOfClass("UIListLayout")
+	if not layout then
+		layout = make(group, "UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		})
+	end
+	layout.Padding = UDim.new(0, 0)
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	back.LayoutOrder = 1
+	forward.LayoutOrder = 3
+	for _, button in ipairs({ back, forward }) do
+		button.AutoButtonColor = false
+		button.BackgroundTransparency = 1
+		button.Size = UDim2.fromOffset(32, 28)
+		button.ZIndex = 4
+		for _, descendant in ipairs(button:GetDescendants()) do
+			if descendant:IsA("ImageLabel") or descendant:IsA("ImageButton") then
+				descendant.ZIndex = 6
+			end
+		end
+	end
+	local divider = group:FindFirstChild("HistoryDivider")
+	if not divider then
+		divider = make(group, "Frame", {
+			Name = "HistoryDivider",
+			BackgroundColor3 = Color3.fromRGB(211, 213, 218),
+			BorderSizePixel = 0,
+			LayoutOrder = 2,
+			Size = UDim2.fromOffset(1, 15),
+			ZIndex = 6,
+		})
+	end
+	local function setDark(dark)
+		group.BackgroundColor3 = dark and Color3.fromRGB(62, 63, 68) or Color3.fromRGB(255, 255, 255)
+		outline.Color = dark and Color3.fromRGB(104, 106, 112) or Color3.fromRGB(222, 224, 230)
+		divider.BackgroundColor3 = dark and Color3.fromRGB(107, 109, 115) or Color3.fromRGB(211, 213, 218)
+	end
+	setDark(false)
+	return setDark
+end
+
 local function refreshCard(card, selected, accent)
 	local stroke = card:FindFirstChildOfClass("UIStroke")
 	if stroke then
@@ -719,6 +901,311 @@ local function refreshCard(card, selected, accent)
 		stroke.Thickness = selected and 2 or 1
 	end
 	card.BackgroundColor3 = selected and accent:Lerp(Color3.new(1, 1, 1), 0.91) or Color3.fromRGB(250, 250, 252)
+end
+
+local function createHSVColorPicker(window, anchor, initialColor, title, onApply)
+	local rootStructure = window.Structures.Body
+	local root = typeof(rootStructure) == "Instance" and rootStructure or rootStructure and rootStructure.__instance
+	if not root or not anchor then
+		return
+	end
+
+	local width, height = 276, 270
+	local rootPosition = root.AbsolutePosition
+	local anchorPosition = anchor.AbsolutePosition
+	local rootSize = root.AbsoluteSize
+	local x = math.clamp(anchorPosition.X - rootPosition.X, 8, math.max(8, rootSize.X - width - 8))
+	local y = anchorPosition.Y - rootPosition.Y + anchor.AbsoluteSize.Y + 6
+	if y + height > rootSize.Y - 8 then
+		y = math.max(8, anchorPosition.Y - rootPosition.Y - height - 6)
+	end
+
+	local tweenService = game:GetService("TweenService")
+	local userInputService = game:GetService("UserInputService")
+	local connections = {}
+	local hue, saturation, value = Color3.toHSV(initialColor or SYSTEM_BLUE)
+	local dragging = nil
+	local closed = false
+
+	local backdrop = make(root, "TextButton", {
+		Name = "WindUIColorPickerBackdrop",
+		Active = true,
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		ZIndex = 299,
+	})
+	local panel = make(root, "Frame", {
+		Name = "WindUIColorPicker",
+		BackgroundColor3 = Color3.fromRGB(250, 250, 252),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(x, math.max(0, y - 8)),
+		Size = UDim2.fromOffset(width, height),
+		ZIndex = 300,
+	})
+	make(panel, "UICorner", { CornerRadius = UDim.new(0, 12) })
+	make(panel, "UIStroke", {
+		Color = Color3.fromRGB(205, 207, 213),
+		Transparency = 0.12,
+		Thickness = 1,
+	})
+	local panelScale = make(panel, "UIScale", { Scale = 0.94 })
+
+	local heading = make(panel, "TextLabel", {
+		BackgroundTransparency = 1,
+		FontFace = Font.new("rbxassetid://12187365364"),
+		Position = UDim2.fromOffset(14, 10),
+		Size = UDim2.new(1, -28, 0, 23),
+		Text = title or "Choose Colour",
+		TextColor3 = Color3.fromRGB(38, 39, 43),
+		TextSize = 15,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 302,
+	})
+	local wheel = make(panel, "Frame", {
+		Name = "ColorWheel",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(14, 42),
+		Size = UDim2.fromOffset(174, 174),
+		ZIndex = 302,
+	})
+	local wheelCenter = 87
+	local wheelRadius = 80
+	local wheelDots = 56
+	local wheelSelector = make(wheel, "Frame", {
+		Name = "WheelSelector",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(wheelCenter, wheelCenter - wheelRadius),
+		Size = UDim2.fromOffset(18, 18),
+		ZIndex = 306,
+	})
+	make(wheelSelector, "UICorner", { CornerRadius = UDim.new(1, 0) })
+	make(wheelSelector, "UIStroke", { Color = Color3.fromRGB(55, 57, 63), Thickness = 1.5 })
+	local wheelSelectorInner = make(wheelSelector, "Frame", {
+		Name = "WheelSelectorInner",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(14, 14),
+		ZIndex = 307,
+	})
+	make(wheelSelectorInner, "UICorner", { CornerRadius = UDim.new(1, 0) })
+	make(wheelSelectorInner, "UIStroke", { Color = Color3.new(1, 1, 1), Thickness = 2 })
+
+	local surface = make(wheel, "ImageLabel", {
+		Name = "SaturationValueSurface",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Color3.fromHSV(hue, 1, 1),
+		BorderSizePixel = 0,
+		Image = "rbxassetid://4155801252",
+		Position = UDim2.fromOffset(wheelCenter, wheelCenter),
+		Size = UDim2.fromOffset(96, 96),
+		ZIndex = 303,
+	})
+	make(surface, "UICorner", { CornerRadius = UDim.new(0, 8) })
+	make(surface, "UIStroke", {
+		Color = Color3.fromRGB(205, 207, 213),
+		Transparency = 0.25,
+		Thickness = 1,
+	})
+	local surfaceInput = make(surface, "TextButton", {
+		Name = "SurfaceInput",
+		Active = true,
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		ZIndex = 304,
+	})
+	local selector = make(surfaceInput, "Frame", {
+		Name = "ColorSelector",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = SYSTEM_BLUE,
+		BorderSizePixel = 0,
+		Position = UDim2.fromScale(saturation, 1 - value),
+		Size = UDim2.fromOffset(13, 13),
+		ZIndex = 305,
+	})
+	make(selector, "UICorner", { CornerRadius = UDim.new(1, 0) })
+	make(selector, "UIStroke", {
+		Color = Color3.new(1, 1, 1),
+		Thickness = 2,
+		Transparency = 0.05,
+	})
+
+	local updateColor, setWheelHue, isPointerInput
+	for index = 0, wheelDots - 1 do
+		local dotHue = index / wheelDots
+		local angle = dotHue * math.pi * 2 - math.pi / 2
+		local dot = make(wheel, "ImageButton", {
+			Name = "Hue_" .. tostring(index + 1),
+			AutoButtonColor = false,
+			BackgroundColor3 = Color3.fromHSV(dotHue, 1, 1),
+			BorderSizePixel = 0,
+			Image = "",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset(wheelCenter + math.cos(angle) * wheelRadius, wheelCenter + math.sin(angle) * wheelRadius),
+			Size = UDim2.fromOffset(12, 12),
+			ZIndex = 304,
+		})
+		make(dot, "UICorner", { CornerRadius = UDim.new(1, 0) })
+		dot.InputBegan:Connect(function(input)
+			if isPointerInput(input) then
+				dragging = "wheel"
+				setWheelHue(Vector2.new(input.Position.X, input.Position.Y))
+			end
+		end)
+		dot.Activated:Connect(function()
+			hue = dotHue
+			updateColor()
+		end)
+	end
+
+	local preview = make(panel, "Frame", {
+		Name = "ColorPreview",
+		BackgroundColor3 = initialColor or SYSTEM_BLUE,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(207, 54),
+		Size = UDim2.fromOffset(42, 42),
+		ZIndex = 302,
+	})
+	make(preview, "UICorner", { CornerRadius = UDim.new(1, 0) })
+	make(preview, "UIStroke", { Color = Color3.fromRGB(205, 207, 213), Thickness = 1 })
+	local hex = make(panel, "TextLabel", {
+		BackgroundTransparency = 1,
+		FontFace = Font.new("rbxassetid://12187365364"),
+		Position = UDim2.fromOffset(198, 106),
+		Size = UDim2.fromOffset(68, 23),
+		Text = "#007AFF",
+		TextColor3 = Color3.fromRGB(78, 80, 86),
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 302,
+	})
+
+	local cancel = make(panel, "TextButton", {
+		Name = "Cancel",
+		AutoButtonColor = false,
+		BackgroundColor3 = Color3.fromRGB(238, 239, 242),
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(130, 231),
+		Size = UDim2.fromOffset(62, 27),
+		Text = "Cancel",
+		TextColor3 = Color3.fromRGB(52, 53, 58),
+		TextSize = 12,
+		ZIndex = 303,
+	})
+	make(cancel, "UICorner", { CornerRadius = UDim.new(0, 7) })
+	local apply = make(panel, "TextButton", {
+		Name = "Apply",
+		AutoButtonColor = false,
+		BackgroundColor3 = SYSTEM_BLUE,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(198, 231),
+		Size = UDim2.fromOffset(64, 27),
+		Text = "Apply",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 12,
+		ZIndex = 303,
+	})
+	make(apply, "UICorner", { CornerRadius = UDim.new(0, 7) })
+
+	local function disconnectAll()
+		for _, connection in ipairs(connections) do
+			connection:Disconnect()
+		end
+		table.clear(connections)
+	end
+	local function close()
+		if closed then
+			return
+		end
+		closed = true
+		dragging = nil
+		disconnectAll()
+		tweenService:Create(panelScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.95 }):Play()
+		tweenService:Create(panel, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Position = UDim2.fromOffset(x, y - 8),
+			BackgroundTransparency = 1,
+		}):Play()
+		task.delay(0.13, function()
+			if backdrop.Parent then backdrop:Destroy() end
+			if panel.Parent then panel:Destroy() end
+		end)
+	end
+	local function updateWheelSelector()
+		local angle = hue * math.pi * 2 - math.pi / 2
+		wheelSelector.Position = UDim2.fromOffset(wheelCenter + math.cos(angle) * wheelRadius, wheelCenter + math.sin(angle) * wheelRadius)
+	end
+	updateColor = function()
+		local color = Color3.fromHSV(hue, saturation, value)
+		surface.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+		selector.Position = UDim2.new(saturation, 0, 1 - value, 0)
+		selector.BackgroundColor3 = color
+		wheelSelectorInner.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+		updateWheelSelector()
+		preview.BackgroundColor3 = color
+		hex.Text = "#" .. color:ToHex():upper()
+	end
+	local function setSurface(position)
+		local size = surface.AbsoluteSize
+		if size.X <= 0 or size.Y <= 0 then return end
+		local origin = surface.AbsolutePosition
+		saturation = math.clamp((position.X - origin.X) / size.X, 0, 1)
+		value = 1 - math.clamp((position.Y - origin.Y) / size.Y, 0, 1)
+		updateColor()
+	end
+	setWheelHue = function(position)
+		local center = wheel.AbsolutePosition + Vector2.new(wheelCenter, wheelCenter)
+		local dx, dy = position.X - center.X, position.Y - center.Y
+		local angle = math.atan2(dy, dx) + math.pi / 2
+		hue = (angle / (math.pi * 2)) % 1
+		updateColor()
+	end
+	isPointerInput = function(input)
+		return input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch
+	end
+	connections[#connections + 1] = surfaceInput.InputBegan:Connect(function(input)
+		if isPointerInput(input) then
+			dragging = "surface"
+			setSurface(Vector2.new(input.Position.X, input.Position.Y))
+		end
+	end)
+	connections[#connections + 1] = userInputService.InputChanged:Connect(function(input)
+		if not dragging then return end
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			local position = Vector2.new(input.Position.X, input.Position.Y)
+			if dragging == "surface" then
+				setSurface(position)
+			elseif dragging == "wheel" then
+				setWheelHue(position)
+			end
+		end
+	end)
+	connections[#connections + 1] = userInputService.InputEnded:Connect(function(input)
+		if isPointerInput(input) then dragging = nil end
+	end)
+	backdrop.Activated:Connect(close)
+	cancel.Activated:Connect(close)
+	apply.Activated:Connect(function()
+		if onApply then onApply(Color3.fromHSV(hue, saturation, value)) end
+		close()
+	end)
+	updateColor()
+	tweenService:Create(panelScale, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	tweenService:Create(panel, TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Position = UDim2.fromOffset(x, y),
+		BackgroundTransparency = 0.03,
+	}):Play()
+	return { Close = close, Panel = panel }
 end
 
 local function makeVisualPicker(form, title, subtitle, options, selectedValue, cardWidth, accent, onChanged, cardHeight)
@@ -751,6 +1238,13 @@ local function makeVisualPicker(form, title, subtitle, options, selectedValue, c
 		handle.Value = index
 		for i, card in ipairs(cards) do
 			refreshCard(card, i == index, accent)
+			local iconTile = card:FindFirstChild("StyleIconPreview")
+			local iconStroke = iconTile and iconTile:FindFirstChild("StyleIconOutline")
+			if iconStroke then
+				iconStroke.Color = accent
+				iconStroke.Transparency = i == index and 0 or 1
+				iconStroke.Thickness = i == index and 2 or 1
+			end
 		end
 		if fireCallback ~= false and onChanged then
 			onChanged(index)
@@ -760,7 +1254,7 @@ local function makeVisualPicker(form, title, subtitle, options, selectedValue, c
 	for index, option in ipairs(options) do
 		local card = make(holder, "TextButton", {
 			Name = "Choice_" .. tostring(index),
-			AutoButtonColor = true,
+			AutoButtonColor = false,
 			BackgroundColor3 = Color3.fromRGB(250, 250, 252),
 			BorderSizePixel = 0,
 			LayoutOrder = index,
@@ -838,13 +1332,12 @@ local function makeVisualPicker(form, title, subtitle, options, selectedValue, c
 				Size = UDim2.fromOffset(36, 36),
 			})
 			make(iconTile, "UICorner", { CornerRadius = UDim.new(0, 9) })
-			if option.Mode == "clear" then
-				make(iconTile, "UIStroke", {
-					Color = option.Color or accent,
-					Transparency = 0.25,
-					Thickness = 1,
-				})
-			end
+			make(iconTile, "UIStroke", {
+				Name = "StyleIconOutline",
+				Color = Color3.fromRGB(0, 122, 255),
+				Transparency = 1,
+				Thickness = 2,
+			})
 			local icon = make(iconTile, "ImageLabel", {
 				Name = "StyleSymbol",
 				AnchorPoint = Vector2.new(0.5, 0.5),
@@ -953,6 +1446,31 @@ local function makeVisualPicker(form, title, subtitle, options, selectedValue, c
 		card.Activated:Connect(function()
 			updateSelection(index, true)
 		end)
+		card.MouseEnter:Connect(function()
+			local stroke = card:FindFirstChildOfClass("UIStroke")
+			if stroke then
+				stroke.Color = accent
+				stroke.Transparency = 0
+				stroke.Thickness = 2
+			end
+			local iconTile = card:FindFirstChild("StyleIconPreview")
+			local iconStroke = iconTile and iconTile:FindFirstChild("StyleIconOutline")
+			if iconStroke then
+				iconStroke.Color = accent
+				iconStroke.Transparency = 0
+				iconStroke.Thickness = 2
+			end
+		end)
+		card.MouseLeave:Connect(function()
+			refreshCard(card, index == handle.Value, accent)
+			local iconTile = card:FindFirstChild("StyleIconPreview")
+			local iconStroke = iconTile and iconTile:FindFirstChild("StyleIconOutline")
+			if iconStroke then
+				iconStroke.Color = accent
+				iconStroke.Transparency = index == handle.Value and 0 or 1
+				iconStroke.Thickness = index == handle.Value and 2 or 1
+			end
+		end)
 		table.insert(cards, card)
 	end
 
@@ -974,10 +1492,10 @@ local function makeVisualPicker(form, title, subtitle, options, selectedValue, c
 	return handle
 end
 
-local function makeAccentSwatches(form, cascade, app, state)
-	local parent = customRow(form, "Color", "Choose an accent")
+local function makeAccentSwatches(form, cascade, app, state, window)
+	local parent = customRow(form, "Color", "Choose an accent color or Multicolor.")
 	local palette = {
-		{ "Spectrum", Color3.fromRGB(60, 145, 240) },
+		{ "Multicolor", SYSTEM_BLUE },
 		{ "Blue", Color3.fromRGB(10, 132, 255) },
 		{ "Purple", Color3.fromRGB(191, 90, 242) },
 		{ "Pink", Color3.fromRGB(255, 55, 95) },
@@ -992,12 +1510,12 @@ local function makeAccentSwatches(form, cascade, app, state)
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		LayoutOrder = 1,
-		Size = UDim2.fromOffset(9 * 25 + 8 * 4, 28),
+		Size = UDim2.fromOffset(322, 32),
 	})
 	make(holder, "UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
-		Padding = UDim.new(0, 4),
+		Padding = UDim.new(0, 5),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 	})
@@ -1013,14 +1531,17 @@ local function makeAccentSwatches(form, cascade, app, state)
 		for i, button in ipairs(swatches) do
 			local stroke = button:FindFirstChildOfClass("UIStroke")
 			if stroke then
-				stroke.Color = i == index and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(130, 130, 135)
-				stroke.Thickness = i == index and 2 or 1
-				stroke.Transparency = i == index and 0 or 0.55
+				stroke.Color = i == index and SYSTEM_BLUE or Color3.fromRGB(130, 130, 135)
+				stroke.Thickness = i == index and 3 or 1
+				stroke.Transparency = i == index and 0 or 0.68
 			end
 		end
 		if fireCallback ~= false then
-			local accentName = palette[index][1] == "Spectrum" and "Blue" or palette[index][1]
+			local accentName = palette[index][1] == "Multicolor" and "Blue" or palette[index][1]
 			local accent = cascade.Accents[accentName]
+			if palette[index][1] == "Graphite" then
+				accent = cascade.Accents.Gray or cascade.Accents.Graphite or accent
+			end
 			if accent then
 				app.Accent = accent
 			end
@@ -1034,31 +1555,86 @@ local function makeAccentSwatches(form, cascade, app, state)
 	for index, item in ipairs(palette) do
 		local button = make(holder, "ImageButton", {
 			Name = "Accent_" .. item[1],
-			AutoButtonColor = true,
+			AutoButtonColor = false,
 			BackgroundColor3 = item[2],
 			BorderSizePixel = 0,
-			LayoutOrder = index,
-			Size = UDim2.fromOffset(21, 21),
+			LayoutOrder = index == 1 and 1 or index + 1,
+			Size = UDim2.fromOffset(index == 1 and 28 or 22, index == 1 and 28 or 22),
 		})
 		make(button, "UICorner", { CornerRadius = UDim.new(1, 0) })
 		make(button, "UIStroke", {
 			Color = Color3.fromRGB(130, 130, 135),
-			Transparency = 0.55,
+			Transparency = 0.68,
 			Thickness = 1,
 		})
-		if item[1] == "Spectrum" then
+		if item[1] == "Multicolor" then
 			make(button, "UIGradient", {
 				Color = ColorSequence.new({
-					ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 70, 70)),
-					ColorSequenceKeypoint.new(0.22, Color3.fromRGB(255, 196, 50)),
-					ColorSequenceKeypoint.new(0.45, Color3.fromRGB(70, 210, 95)),
-					ColorSequenceKeypoint.new(0.68, Color3.fromRGB(45, 170, 255)),
-					ColorSequenceKeypoint.new(1, Color3.fromRGB(186, 92, 240)),
+					ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 61, 73)),
+					ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 188, 54)),
+					ColorSequenceKeypoint.new(0.4, Color3.fromRGB(60, 199, 89)),
+					ColorSequenceKeypoint.new(0.6, Color3.fromRGB(32, 163, 255)),
+					ColorSequenceKeypoint.new(0.8, Color3.fromRGB(113, 101, 255)),
+					ColorSequenceKeypoint.new(1, Color3.fromRGB(238, 70, 205)),
 				}),
 			})
+			make(holder, "TextLabel", {
+				Name = "MulticolorLabel",
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				FontFace = Font.new("rbxassetid://12187365364"),
+				LayoutOrder = 2,
+				Size = UDim2.fromOffset(68, 24),
+				Text = "Multicolor",
+				TextColor3 = Color3.fromRGB(62, 63, 68),
+				TextSize = 12,
+				TextXAlignment = Enum.TextXAlignment.Left,
+			})
 		end
+		button.MouseEnter:Connect(function()
+			local stroke = button:FindFirstChildOfClass("UIStroke")
+			if stroke and index ~= handle.Value then
+				stroke.Color = SYSTEM_BLUE
+				stroke.Transparency = 0.15
+				stroke.Thickness = 1.5
+			end
+		end)
+		button.MouseLeave:Connect(function()
+			local stroke = button:FindFirstChildOfClass("UIStroke")
+			if stroke and index ~= handle.Value then
+				stroke.Color = Color3.fromRGB(130, 130, 135)
+				stroke.Transparency = 0.68
+				stroke.Thickness = 1
+			end
+		end)
 		button.Activated:Connect(function()
 			select(index, true)
+			if index == 1 then
+				createHSVColorPicker(window, button, state.CustomAccentColor or state.AccentColor, "Choose Accent Colour", function(color)
+					state.Accent = "Custom"
+					state.AccentColor = color
+					state.CustomAccentColor = color
+					local bestIndex, bestDistance = 2, math.huge
+					for candidate = 2, #palette do
+						local optionColor = palette[candidate][2]
+						local dr = color.R - optionColor.R
+						local dg = color.G - optionColor.G
+						local db = color.B - optionColor.B
+						local distance = dr * dr + dg * dg + db * db
+						if distance < bestDistance then
+							bestDistance = distance
+							bestIndex = candidate
+						end
+					end
+					local accentName = palette[bestIndex][1]
+					local nearestAccent = cascade.Accents[accentName]
+					if accentName == "Graphite" then
+						nearestAccent = cascade.Accents.Gray or cascade.Accents.Graphite or nearestAccent
+					end
+					if nearestAccent then app.Accent = nearestAccent end
+					if state.OnAccentChanged then state.OnAccentChanged(color, 1) end
+				end)
+			end
 		end)
 		table.insert(swatches, button)
 	end
@@ -1066,7 +1642,277 @@ local function makeAccentSwatches(form, cascade, app, state)
 	handle.SetValue = function(_, value, fireCallback)
 		select(value, fireCallback)
 	end
-	select(5, false)
+	select(1, false)
+	return handle
+end
+
+local function makeFolderColorPicker(form, window, state)
+	local parent = customRow(form, "Icon, widget & folder colour", nil)
+	local palette = {
+		{ "Automatic", SYSTEM_BLUE },
+		{ "Red", Color3.fromRGB(255, 69, 58) },
+		{ "Orange", Color3.fromRGB(255, 159, 10) },
+		{ "Yellow", Color3.fromRGB(255, 214, 10) },
+		{ "Green", Color3.fromRGB(50, 215, 75) },
+		{ "Blue", Color3.fromRGB(10, 132, 255) },
+		{ "Purple", Color3.fromRGB(191, 90, 242) },
+		{ "Pink", Color3.fromRGB(255, 55, 95) },
+		{ "Graphite", Color3.fromRGB(142, 142, 147) },
+	}
+	local button = make(parent, "TextButton", {
+		Name = "FolderColorMenuButton",
+		AutoButtonColor = false,
+		BackgroundColor3 = Color3.fromRGB(244, 245, 247),
+		BorderSizePixel = 0,
+		LayoutOrder = 1,
+		Size = UDim2.fromOffset(174, 30),
+		Text = "",
+	})
+	make(button, "UICorner", { CornerRadius = UDim.new(0, 8) })
+	make(button, "UIStroke", {
+		Color = Color3.fromRGB(215, 217, 222),
+		Transparency = 0.25,
+		Thickness = 1,
+	})
+	local dot = make(button, "Frame", {
+		Name = "SelectedColorDot",
+		BackgroundColor3 = palette[state.FolderColor or 1][2],
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(9, 8),
+		Size = UDim2.fromOffset(14, 14),
+	})
+	make(dot, "UICorner", { CornerRadius = UDim.new(1, 0) })
+	local label = make(button, "TextLabel", {
+		Name = "SelectedColorLabel",
+		BackgroundTransparency = 1,
+		FontFace = Font.new("rbxassetid://12187365364"),
+		Position = UDim2.fromOffset(31, 0),
+		Size = UDim2.new(1, -56, 1, 0),
+		Text = "Automatic",
+		TextColor3 = Color3.fromRGB(43, 45, 49),
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+	make(button, "TextLabel", {
+		Name = "MenuChevron",
+		BackgroundTransparency = 1,
+		FontFace = Font.new("rbxassetid://12187365364"),
+		Position = UDim2.new(1, -27, 0, 0),
+		Size = UDim2.fromOffset(20, 30),
+		Text = "⌄",
+		TextColor3 = Color3.fromRGB(103, 105, 111),
+		TextSize = 17,
+		TextXAlignment = Enum.TextXAlignment.Center,
+	})
+
+	local handle = { Value = state.FolderColor or 1 }
+	local activeBackdrop
+	local activeMenu
+	local activeScale
+	local menuTween
+	local function updateButton()
+		if handle.Value == #palette + 1 then
+			label.Text = "Custom"
+			dot.BackgroundColor3 = state.FolderCustomColor or SYSTEM_BLUE
+		else
+			local option = palette[handle.Value] or palette[1]
+			label.Text = option[1]
+			dot.BackgroundColor3 = option[2]
+		end
+	end
+	local function closeMenu()
+		if not activeMenu then return end
+		local menu = activeMenu
+		local backdrop = activeBackdrop
+		local scale = activeScale
+		activeMenu, activeBackdrop, activeScale = nil, nil, nil
+		if menuTween then menuTween:Cancel() end
+		menuTween = game:GetService("TweenService"):Create(scale, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.95 })
+		menuTween:Play()
+		game:GetService("TweenService"):Create(menu, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			BackgroundTransparency = 1,
+		}):Play()
+		task.delay(0.11, function()
+			if menu.Parent then menu:Destroy() end
+			if backdrop.Parent then backdrop:Destroy() end
+		end)
+	end
+	local function chooseOption(index)
+		handle.Value = index
+		state.FolderColor = index
+		state.FolderCustomColor = nil
+		updateButton()
+		closeMenu()
+	end
+	local function openMenu()
+		if activeMenu then
+			closeMenu()
+			return
+		end
+		local rootStructure = window.Structures.Body
+		local root = typeof(rootStructure) == "Instance" and rootStructure or rootStructure and rootStructure.__instance
+		if not root then return end
+		local menuWidth, menuHeight = 208, 286
+		local rootPosition, rootSize = root.AbsolutePosition, root.AbsoluteSize
+		local buttonPosition = button.AbsolutePosition
+		local x = math.clamp(buttonPosition.X - rootPosition.X + button.AbsoluteSize.X - menuWidth, 8, math.max(8, rootSize.X - menuWidth - 8))
+		local y = buttonPosition.Y - rootPosition.Y + button.AbsoluteSize.Y + 5
+		if y + menuHeight > rootSize.Y - 8 then
+			y = math.max(8, buttonPosition.Y - rootPosition.Y - menuHeight - 5)
+		end
+		local dark = state.Appearance == 3
+		local backdrop = make(root, "TextButton", {
+			Name = "FolderColorMenuBackdrop",
+			Active = true,
+			AutoButtonColor = false,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+			Text = "",
+			ZIndex = 389,
+		})
+		local menu = make(root, "Frame", {
+			Name = "FolderColorMenu",
+			BackgroundColor3 = dark and Color3.fromRGB(48, 49, 53) or Color3.fromRGB(250, 250, 252),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(x, math.max(0, y - 8)),
+			Size = UDim2.fromOffset(menuWidth, menuHeight),
+			ZIndex = 390,
+		})
+		activeBackdrop, activeMenu = backdrop, menu
+		make(menu, "UICorner", { CornerRadius = UDim.new(0, 11) })
+		make(menu, "UIStroke", {
+			Color = dark and Color3.fromRGB(99, 101, 108) or Color3.fromRGB(206, 208, 214),
+			Transparency = 0.14,
+			Thickness = 1,
+		})
+		local scale = make(menu, "UIScale", { Scale = 0.95 })
+		activeScale = scale
+		for index, option in ipairs(palette) do
+			local selected = handle.Value == index
+			local row = make(menu, "TextButton", {
+				Name = "ColorOption_" .. option[1],
+				AutoButtonColor = false,
+				BackgroundColor3 = SYSTEM_BLUE,
+				BackgroundTransparency = selected and 0.86 or 1,
+				BorderSizePixel = 0,
+				Position = UDim2.fromOffset(6, 6 + (index - 1) * 26),
+				Size = UDim2.new(1, -12, 0, 24),
+				Text = "",
+				ZIndex = 392,
+			})
+			make(row, "UICorner", { CornerRadius = UDim.new(0, 6) })
+			local optionDot = make(row, "Frame", {
+				BackgroundColor3 = option[2],
+				BorderSizePixel = 0,
+				Position = UDim2.fromOffset(8, 6),
+				Size = UDim2.fromOffset(12, 12),
+				ZIndex = 393,
+			})
+			make(optionDot, "UICorner", { CornerRadius = UDim.new(1, 0) })
+			if index == 1 then
+				make(optionDot, "UIGradient", {
+					Color = ColorSequence.new({
+						ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 75, 75)),
+						ColorSequenceKeypoint.new(0.33, Color3.fromRGB(255, 206, 65)),
+						ColorSequenceKeypoint.new(0.66, Color3.fromRGB(53, 194, 110)),
+						ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 112, 255)),
+					}),
+				})
+			end
+			make(row, "TextLabel", {
+				BackgroundTransparency = 1,
+				FontFace = Font.new("rbxassetid://12187365364"),
+				Position = UDim2.fromOffset(29, 0),
+				Size = UDim2.new(1, -58, 1, 0),
+				Text = option[1],
+				TextColor3 = dark and Color3.fromRGB(240, 240, 243) or Color3.fromRGB(39, 40, 44),
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				ZIndex = 393,
+			})
+			if selected then
+				make(row, "TextLabel", {
+					BackgroundTransparency = 1,
+					FontFace = Font.new("rbxassetid://12187365364"),
+					Position = UDim2.new(1, -27, 0, 0),
+					Size = UDim2.fromOffset(18, 24),
+					Text = "✓",
+					TextColor3 = SYSTEM_BLUE,
+					TextSize = 14,
+					ZIndex = 393,
+				})
+			end
+			row.MouseEnter:Connect(function()
+				row.BackgroundTransparency = 0.84
+			end)
+			row.MouseLeave:Connect(function()
+				row.BackgroundTransparency = selected and 0.86 or 1
+			end)
+			row.Activated:Connect(function()
+				chooseOption(index)
+			end)
+		end
+		make(menu, "Frame", {
+			BackgroundColor3 = dark and Color3.fromRGB(97, 99, 105) or Color3.fromRGB(218, 220, 225),
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(12, 242),
+			Size = UDim2.new(1, -24, 0, 1),
+			ZIndex = 392,
+		})
+		local choose = make(menu, "TextButton", {
+			Name = "ChooseColour",
+			AutoButtonColor = false,
+			BackgroundColor3 = SYSTEM_BLUE,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(6, 248),
+			Size = UDim2.new(1, -12, 0, 30),
+			Text = "",
+			ZIndex = 392,
+		})
+		make(choose, "UICorner", { CornerRadius = UDim.new(0, 6) })
+		make(choose, "TextLabel", {
+			BackgroundTransparency = 1,
+			FontFace = Font.new("rbxassetid://12187365364"),
+			Position = UDim2.fromOffset(9, 0),
+			Size = UDim2.new(1, -18, 1, 0),
+			Text = "Choose Colour…",
+			TextColor3 = SYSTEM_BLUE,
+			TextSize = 13,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 393,
+		})
+		choose.MouseEnter:Connect(function() choose.BackgroundTransparency = 0.86 end)
+		choose.MouseLeave:Connect(function() choose.BackgroundTransparency = 1 end)
+		backdrop.Activated:Connect(closeMenu)
+		choose.Activated:Connect(function()
+			closeMenu()
+			task.delay(0.12, function()
+				createHSVColorPicker(window, button, state.FolderCustomColor or state.AccentColor, "Choose Folder Colour", function(color)
+					handle.Value = #palette + 1
+					state.FolderColor = handle.Value
+					state.FolderCustomColor = color
+					updateButton()
+				end)
+			end)
+		end)
+		game:GetService("TweenService"):Create(scale, TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+		game:GetService("TweenService"):Create(menu, TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+			Position = UDim2.fromOffset(x, y),
+			BackgroundTransparency = 0.02,
+		}):Play()
+	end
+	button.Activated:Connect(openMenu)
+	handle.SetValue = function(_, index)
+		if type(index) == "number" and index >= 1 and index <= #palette + 1 then
+			handle.Value = index
+			state.FolderColor = index
+			updateButton()
+		end
+	end
+	updateButton()
 	return handle
 end
 
@@ -1093,7 +1939,7 @@ function UI.CreateSystemSettings(cascade, options)
 	local app = cascade.New({
 		WindowPill = true,
 		Theme = cascade.Themes.Light,
-		Accent = cascade.Accents.Red or cascade.Accents.Blue,
+		Accent = cascade.Accents.Blue or cascade.Accents.Red,
 		DisplayOrder = 80,
 		ResetOnSpawn = false,
 	})
@@ -1112,6 +1958,7 @@ function UI.CreateSystemSettings(cascade, options)
 		UIBlur = true,
 	})
 	local searchField = moveSearchIntoSidebar(window)
+	local styleNavigationPill = configureTitlebarNavigation(window)
 
 	local tabs = {}
 	local controls = {}
@@ -1120,6 +1967,8 @@ function UI.CreateSystemSettings(cascade, options)
 		IconStyle = 1,
 		Appearance = 2,
 		LiquidGlass = 1,
+		Accent = "Multicolor",
+		AccentColor = SYSTEM_BLUE,
 		FolderColor = 1,
 		SidebarIconSize = 2,
 		WallpaperTint = true,
@@ -1132,7 +1981,7 @@ function UI.CreateSystemSettings(cascade, options)
 		local dark = state.Appearance == 3
 		local base = dark and Color3.fromRGB(49, 50, 54) or Color3.fromRGB(233, 234, 237)
 		local accentColor = state.WallpaperTint and state.AccentColor or base
-		accentColor = accentColor or Color3.fromRGB(255, 69, 58)
+		accentColor = accentColor or SYSTEM_BLUE
 		if state.LiquidGlass == 2 then
 			searchField.Body.BackgroundColor3 = base:Lerp(accentColor, 0.2)
 			searchField.Body.BackgroundTransparency = 0.12
@@ -1140,11 +1989,13 @@ function UI.CreateSystemSettings(cascade, options)
 			searchField.Body.BackgroundColor3 = base
 			searchField.Body.BackgroundTransparency = 0.28
 		end
-		local stroke = searchField.Body:FindFirstChildOfClass("UIStroke")
+		local stroke = searchField.Body:FindFirstChild("SearchBaseStroke")
 		if stroke then
-			stroke.Color = state.LiquidGlass == 2 and accentColor or Color3.fromRGB(255, 255, 255)
-			stroke.Transparency = state.LiquidGlass == 2 and 0.55 or 0.42
+			stroke.Color = dark and Color3.fromRGB(104, 106, 112) or Color3.fromRGB(194, 197, 204)
+			stroke.Thickness = 1
+			stroke.Transparency = state.LiquidGlass == 2 and 0.3 or 0.45
 		end
+		styleNavigationPill(dark)
 	end
 	local function setAppearance(modeIndex)
 		state.Appearance = modeIndex
@@ -1325,7 +2176,7 @@ function UI.CreateSystemSettings(cascade, options)
 	controls.AppearancePreview = makeVisualPicker(
 		appearanceForm,
 		"Appearance",
-		nil,
+		"Choose a light or dark appearance.",
 		{
 			{ Label = "Auto", Icon = cascade.Symbols.sunMax, Mode = "auto", Preview = true },
 			{ Label = "Light", Icon = cascade.Symbols.sunMax, Mode = "light", Preview = true },
@@ -1333,7 +2184,7 @@ function UI.CreateSystemSettings(cascade, options)
 		},
 		2,
 		82,
-		Color3.fromRGB(255, 69, 58),
+		SYSTEM_BLUE,
 		function(index)
 			setAppearance(index)
 		end,
@@ -1343,14 +2194,14 @@ function UI.CreateSystemSettings(cascade, options)
 	controls.LiquidGlass = makeVisualPicker(
 		appearanceForm,
 		"Liquid Glass",
-		nil,
+		"Choose how translucent surfaces appear.",
 		{
 			{ Label = "Clear", Mode = "clear", Glass = true },
 			{ Label = "Tinted", Mode = "tinted", Glass = true },
 		},
 		1,
 		86,
-		Color3.fromRGB(255, 69, 58),
+		SYSTEM_BLUE,
 		function(index)
 			state.LiquidGlass = index
 			applyGlassStyle()
@@ -1359,7 +2210,7 @@ function UI.CreateSystemSettings(cascade, options)
 	)
 
 	local themeForm = pageForm(appearance, "Theme", nil)
-	controls.Accent = makeAccentSwatches(themeForm, cascade, app, state)
+	controls.Accent = makeAccentSwatches(themeForm, cascade, app, state, window)
 
 	controls.TextHighlight = rowControl(themeForm, "Text highlight color", nil, "PopUpButton", {
 		Options = { "Automatic", "Blue", "Purple", "Pink", "Green", "Orange" },
@@ -1372,7 +2223,7 @@ function UI.CreateSystemSettings(cascade, options)
 	controls.IconStyle = makeVisualPicker(
 		themeForm,
 		"Icon & widget style",
-		nil,
+		"Choose how app icons and widgets look.",
 		{
 			{ Label = "Default", Icon = cascade.Symbols.cloudSunFill, Color = Color3.fromRGB(0, 122, 255), StylePreview = true },
 			{ Label = "Dark", Icon = cascade.Symbols.cloudSunFill, Color = Color3.fromRGB(53, 54, 59), Mode = "dark", StylePreview = true },
@@ -1381,7 +2232,7 @@ function UI.CreateSystemSettings(cascade, options)
 		},
 		1,
 		60,
-		Color3.fromRGB(255, 69, 58),
+		SYSTEM_BLUE,
 		function(value)
 			state.IconStyle = value
 			if tabIconStyle then
@@ -1391,13 +2242,7 @@ function UI.CreateSystemSettings(cascade, options)
 		82
 	)
 
-	controls.FolderColor = rowControl(themeForm, "Folder color", nil, "PopUpButton", {
-		Options = { "Automatic", "Blue", "Purple", "Green", "Orange" },
-		Value = 1,
-		ValueChanged = function(_, value)
-			state.FolderColor = value
-		end,
-	})
+	controls.FolderColor = makeFolderColorPicker(themeForm, window, state)
 
 	local windowsForm = pageForm(appearance, "Windows", nil)
 	controls.SidebarIconSize = rowControl(windowsForm, "Sidebar icon size", nil, "PopUpButton", {
@@ -1641,9 +2486,10 @@ function UI.CreateSystemSettings(cascade, options)
 		end
 		applyGlassStyle()
 	end
-	state.OnAccentChanged(state.AccentColor or Color3.fromRGB(255, 69, 58))
+	state.OnAccentChanged(state.AccentColor or SYSTEM_BLUE)
 	applyGlassStyle()
 	configureSearchSuggestions(window, searchField, tabs)
+	animateSearchEntrance(searchField)
 
 	return app, {
 		Window = window,
