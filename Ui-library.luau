@@ -4,7 +4,7 @@
 local UI = {
 	CascadeVersion = "v1.4.0",
 	Version = "1.4.0",
-	BuildId = "1.4.0-windui-icon-gloss-accent-fix3",
+	BuildId = "1.4.0-colored-search-icons-fix5",
 }
 
 local RELEASE_URL = "https://github.com/cascadeui/Cascade/releases/download/v1.4.0/dist.luau"
@@ -284,6 +284,7 @@ local function styleTabIcons(tabs)
 		Harvest = Color3.fromRGB(52, 199, 89),
 	}
 	local entries = {}
+	local iconTitleGap = 7
 
 	for key, tab in pairs(tabs) do
 		local structures = tab.Structures
@@ -291,6 +292,10 @@ local function styleTabIcons(tabs)
 		if symbol and key ~= "SignIn" then
 			local tileColor = colors[key] or Color3.fromRGB(0, 122, 255)
 			local leading = structures.Leading
+			local leadingLayout = leading and leading:FindFirstChildOfClass("UIListLayout")
+			if leadingLayout then
+				leadingLayout.Padding = UDim.new(0, iconTitleGap)
+			end
 			local tile = make(leading, "Frame", {
 				Name = "CascadeColorIconTile",
 				BackgroundColor3 = Color3.new(1, 1, 1),
@@ -301,6 +306,7 @@ local function styleTabIcons(tabs)
 				Size = UDim2.fromOffset(26, 26),
 				ZIndex = 3,
 			})
+			tile:SetAttribute("CascadeIconColor", tileColor)
 			local corner = make(tile, "UICorner", { CornerRadius = UDim.new(0, 8) })
 			local tileGradient = make(tile, "UIGradient", {
 				Name = "CascadeIconDepth",
@@ -357,7 +363,7 @@ local function styleTabIcons(tabs)
 			symbol.LayoutOrder = 1
 			symbol.ImageTransparency = 0
 			structures.Body.Size = UDim2.new(1, 0, 0, 36)
-			structures.Title.Size = UDim2.new(1, -28, 0, 20)
+			structures.Title.Size = UDim2.new(1, -(26 + iconTitleGap), 0, 20)
 
 			local entry = {
 				Key = key,
@@ -390,14 +396,19 @@ local function styleTabIcons(tabs)
 	function style:SetAccent(accent)
 		if typeof(accent) == "Color3" then
 			self.Accent = accent
-			for _, entry in ipairs(entries) do
-				if entry.Stroke.Parent then
-					entry.Stroke.Color = accent
-					entry.Stroke.Transparency = 0
-					entry.Stroke.Thickness = self.Value == 4 and 2.2 or 1.8
-				end
-			end
 			self:SetValue(self.Value)
+		end
+	end
+	function style:SetOutlineColor(color)
+		if typeof(color) ~= "Color3" then
+			return
+		end
+		self.OutlineColor = color
+		for _, entry in ipairs(entries) do
+			if entry.Stroke.Parent then
+				entry.Stroke.Color = color
+				entry.Stroke.Transparency = 0
+			end
 		end
 	end
 	function style:SetValue(value)
@@ -421,6 +432,7 @@ local function styleTabIcons(tabs)
 				else
 					backgroundColor = entry.BaseColor:Lerp(accent, 0.36)
 				end
+				tile:SetAttribute("CascadeIconColor", backgroundColor)
 				tile.BackgroundColor3 = Color3.new(1, 1, 1)
 				tile.BackgroundTransparency = 0
 				if entry.HasMulticolorGradient and value == 1 then
@@ -439,7 +451,7 @@ local function styleTabIcons(tabs)
 						ColorSequenceKeypoint.new(1, backgroundColor:Lerp(Color3.new(0, 0, 0), value == 2 and 0.12 or 0.2)),
 					})
 				end
-				entry.Stroke.Color = accent
+				entry.Stroke.Color = self.OutlineColor or accent
 				entry.Stroke.Thickness = value == 4 and 2.2 or 1.8
 				entry.Stroke.Transparency = 0
 				entry.Gloss.BackgroundTransparency = value == 2 and 0.76 or value == 3 and 0.68 or 0.58
@@ -458,7 +470,7 @@ local function styleTabIcons(tabs)
 				entry.Tile.Size = UDim2.fromOffset(iconSize, iconSize)
 				entry.Symbol.Size = UDim2.fromOffset(math.floor(iconSize * 0.62), math.floor(iconSize * 0.62))
 				entry.Body.Size = UDim2.new(1, 0, 0, rowHeight)
-				entry.Title.Size = UDim2.new(1, -(iconSize + 2), 0, 20)
+				entry.Title.Size = UDim2.new(1, -(iconSize + iconTitleGap), 0, 20)
 				entry.Corner.CornerRadius = UDim.new(0, math.max(6, math.floor(iconSize * 0.27)))
 			end
 		end
@@ -701,7 +713,12 @@ local function configureSearchSuggestions(window, search, tabs)
 			iconImage = symbol.Image or ""
 			local iconTile = symbol.Parent
 			if iconTile and iconTile:IsA("GuiObject") then
-				tileColor = iconTile.BackgroundColor3
+				local savedColor = iconTile:GetAttribute("CascadeIconColor")
+				if typeof(savedColor) == "Color3" then
+					tileColor = savedColor
+				else
+					tileColor = iconTile.BackgroundColor3
+				end
 			end
 		end
 
@@ -719,13 +736,22 @@ local function configureSearchSuggestions(window, search, tabs)
 		make(button, "UICorner", { CornerRadius = UDim.new(0, 7) })
 		local iconTile = make(button, "Frame", {
 			Name = "IconTile",
-			BackgroundColor3 = tileColor,
+			BackgroundColor3 = Color3.new(1, 1, 1),
 			BorderSizePixel = 0,
 			Position = UDim2.fromOffset(8, 6),
 			Size = UDim2.fromOffset(27, 27),
 			ZIndex = 204,
 		})
 		make(iconTile, "UICorner", { CornerRadius = UDim.new(0, 7) })
+		make(iconTile, "UIGradient", {
+			Name = "CascadeSuggestionIconDepth",
+			Rotation = 90,
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, tileColor:Lerp(Color3.new(1, 1, 1), 0.28)),
+				ColorSequenceKeypoint.new(0.48, tileColor),
+				ColorSequenceKeypoint.new(1, tileColor:Lerp(Color3.new(0, 0, 0), 0.2)),
+			}),
+		})
 		if iconImage ~= "" then
 			local icon = make(iconTile, "ImageLabel", {
 				Name = "Icon",
@@ -1761,6 +1787,22 @@ local function makeFolderColorPicker(form, window, state)
 	})
 
 	local handle = { Value = state.FolderColor or 1 }
+	local function selectedFolderColor()
+		if handle.Value == #palette + 1 then
+			return state.FolderCustomColor or state.AccentColor or SYSTEM_BLUE
+		end
+		local option = palette[handle.Value] or palette[1]
+		if option[1] == "Automatic" then
+			return state.AccentColor or SYSTEM_BLUE
+		end
+		return option[2]
+	end
+	local function notifyFolderColorChanged()
+		state.IconFrameColor = selectedFolderColor()
+		if state.OnFolderColorChanged then
+			state.OnFolderColorChanged(state.IconFrameColor)
+		end
+	end
 	local activeBackdrop
 	local activeMenu
 	local activeScale
@@ -1774,6 +1816,7 @@ local function makeFolderColorPicker(form, window, state)
 			label.Text = option[1]
 			dot.BackgroundColor3 = option[2]
 		end
+		state.IconFrameColor = selectedFolderColor()
 	end
 	local function closeMenu()
 		if not activeMenu then return end
@@ -1797,6 +1840,7 @@ local function makeFolderColorPicker(form, window, state)
 		state.FolderColor = index
 		state.FolderCustomColor = nil
 		updateButton()
+		notifyFolderColorChanged()
 		closeMenu()
 	end
 	local function openMenu()
@@ -1950,6 +1994,7 @@ local function makeFolderColorPicker(form, window, state)
 					state.FolderColor = handle.Value
 					state.FolderCustomColor = color
 					updateButton()
+					notifyFolderColorChanged()
 				end)
 			end)
 		end)
@@ -1964,9 +2009,12 @@ local function makeFolderColorPicker(form, window, state)
 		if type(index) == "number" and index >= 1 and index <= #palette + 1 then
 			handle.Value = index
 			state.FolderColor = index
+			state.FolderCustomColor = nil
 			updateButton()
+			notifyFolderColorChanged()
 		end
 	end
+	handle.GetColor = selectedFolderColor
 	updateButton()
 	return handle
 end
@@ -2538,8 +2586,15 @@ function UI.CreateSystemSettings(cascade, options)
 		end
 		if tabIconStyle then
 			tabIconStyle:SetAccent(color)
+			local folderColor = controls.FolderColor and controls.FolderColor.GetColor and controls.FolderColor.GetColor()
+			tabIconStyle:SetOutlineColor(folderColor or color)
 		end
 		applyGlassStyle()
+	end
+	state.OnFolderColorChanged = function(color)
+		if tabIconStyle then
+			tabIconStyle:SetOutlineColor(color)
+		end
 	end
 	state.OnAccentChanged(state.AccentColor or SYSTEM_BLUE)
 	applyGlassStyle()
