@@ -1,0 +1,1138 @@
+--[[
+    CascadeStyleUI
+    A small, dependency-free Roblox settings UI with a macOS-style sidebar.
+    Inspired by the public Cascade component API and the supplied visual
+    references; this implementation is original and does not include Cascade
+    source code or assets.
+
+    Use from a LocalScript:
+        local UI = require(path.To.CascadeStyleUI)
+        local app = UI.new({ Title = "My App" })
+]]
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local UI = {}
+local Section = {}
+local Tab = {}
+local PageSection = {}
+Section.__index = Section
+Tab.__index = Tab
+PageSection.__index = PageSection
+UI.__index = UI
+
+local COLORS = {
+    Window = Color3.fromRGB(246, 246, 249),
+    Sidebar = Color3.fromRGB(239, 239, 243),
+    Panel = Color3.fromRGB(255, 255, 255),
+    Text = Color3.fromRGB(34, 34, 39),
+    Muted = Color3.fromRGB(111, 112, 121),
+    Border = Color3.fromRGB(222, 223, 228),
+    Selection = Color3.fromRGB(218, 231, 250),
+    Blue = Color3.fromRGB(0, 122, 255),
+    Green = Color3.fromRGB(48, 209, 88),
+    Red = Color3.fromRGB(255, 95, 87),
+    Yellow = Color3.fromRGB(255, 189, 46),
+}
+
+local ICON_PALETTE = {
+    { Color3.fromRGB(83, 143, 245), Color3.fromRGB(234, 242, 255) },
+    { Color3.fromRGB(64, 179, 120), Color3.fromRGB(230, 248, 239) },
+    { Color3.fromRGB(255, 149, 0), Color3.fromRGB(255, 240, 219) },
+    { Color3.fromRGB(175, 82, 222), Color3.fromRGB(246, 231, 255) },
+    { Color3.fromRGB(255, 55, 95), Color3.fromRGB(255, 231, 237) },
+    { Color3.fromRGB(50, 173, 230), Color3.fromRGB(225, 245, 255) },
+}
+
+local function make(className, properties, parent)
+    local object = Instance.new(className)
+    for key, value in pairs(properties or {}) do
+        object[key] = value
+    end
+    object.Parent = parent
+    return object
+end
+
+local function addCorner(object, radius)
+    return make("UICorner", { CornerRadius = UDim.new(0, radius or 10) }, object)
+end
+
+local function addStroke(object, color, transparency, thickness)
+    return make("UIStroke", {
+        Color = color or COLORS.Border,
+        Transparency = transparency or 0,
+        Thickness = thickness or 1,
+    }, object)
+end
+
+local function addPadding(object, left, right, top, bottom)
+    return make("UIPadding", {
+        PaddingLeft = UDim.new(0, left or 0),
+        PaddingRight = UDim.new(0, right or 0),
+        PaddingTop = UDim.new(0, top or 0),
+        PaddingBottom = UDim.new(0, bottom or 0),
+    }, object)
+end
+
+local function label(parent, text, size, position, fontSize, color, properties)
+    local props = {
+        BackgroundTransparency = 1,
+        Position = position or UDim2.new(),
+        Size = size or UDim2.new(1, 0, 0, 20),
+        Font = Enum.Font.Gotham,
+        Text = text or "",
+        TextColor3 = color or COLORS.Text,
+        TextSize = fontSize or 14,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    }
+    for key, value in pairs(properties or {}) do
+        props[key] = value
+    end
+    return make("TextLabel", props, parent)
+end
+
+local function safeCallback(callback, value, control)
+    if type(callback) ~= "function" then
+        return
+    end
+    local ok, err = pcall(callback, value, control)
+    if not ok then
+        warn("[CascadeStyleUI] Callback error: " .. tostring(err))
+    end
+end
+
+local function setVisibleAnimated(object, visible)
+    object.Visible = visible
+end
+
+local function bindClick(app, button, callback)
+    app:_connect(button.Activated, callback)
+end
+
+local function makeVerticalList(parent, padding)
+    return make("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, padding or 0),
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    }, parent)
+end
+
+local function setText(button, value)
+    if button and button.Parent then
+        button.Text = value
+    end
+end
+
+function UI.new(config)
+    config = config or {}
+
+    local player = Players.LocalPlayer
+    assert(player, "CascadeStyleUI.new must be called from a LocalScript")
+    local playerGui = player:WaitForChild("PlayerGui")
+
+    local app = setmetatable({
+        Title = config.Title or "Settings",
+        Subtitle = config.Subtitle or "Personalize your experience",
+        Sections = {},
+        Tabs = {},
+        SelectedTab = nil,
+        _connections = {},
+        _iconIndex = 0,
+        _destroyed = false,
+    }, UI)
+
+    local screen = make("ScreenGui", {
+        Name = config.Name or "CascadeStyleUI",
+        IgnoreGuiInset = true,
+        ResetOnSpawn = false,
+        DisplayOrder = config.DisplayOrder or 80,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    }, playerGui)
+    app.ScreenGui = screen
+
+    local shadow = make("Frame", {
+        Name = "WindowShadow",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.505),
+        Size = UDim2.new(0.84, 14, 0.78, 16),
+        BackgroundColor3 = Color3.fromRGB(35, 38, 48),
+        BackgroundTransparency = 0.79,
+        BorderSizePixel = 0,
+    }, screen)
+    addCorner(shadow, 20)
+
+    local window = make("Frame", {
+        Name = "Window",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.new(0.84, 0, 0.78, 0),
+        BackgroundColor3 = COLORS.Window,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+    }, screen)
+    addCorner(window, 18)
+    addStroke(window, Color3.fromRGB(255, 255, 255), 0.18, 1)
+    make("UISizeConstraint", {
+        MinSize = Vector2.new(660, 430),
+        MaxSize = Vector2.new(1080, 720),
+    }, window)
+    app.Window = window
+
+    local titleBar = make("Frame", {
+        Name = "TitleBar",
+        Size = UDim2.new(1, 0, 0, 52),
+        BackgroundColor3 = Color3.fromRGB(248, 248, 250),
+        BorderSizePixel = 0,
+        ZIndex = 2,
+    }, window)
+    make("Frame", {
+        Position = UDim2.new(0, 0, 1, -1),
+        Size = UDim2.new(1, 0, 0, 1),
+        BackgroundColor3 = COLORS.Border,
+        BorderSizePixel = 0,
+    }, titleBar)
+
+    local traffic = make("Frame", {
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 16, 0.5, -7),
+        Size = UDim2.new(0, 58, 0, 16),
+    }, titleBar)
+    make("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        Padding = UDim.new(0, 8),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+    }, traffic)
+
+    local closeButton = make("TextButton", {
+        Name = "Close",
+        Size = UDim2.fromOffset(14, 14),
+        BackgroundColor3 = COLORS.Red,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+        LayoutOrder = 1,
+    }, traffic)
+    addCorner(closeButton, 99)
+    bindClick(app, closeButton, function()
+        if config.Closeable == false then
+            app:Hide()
+        else
+            app:Destroy()
+        end
+    end)
+
+    local minimizeButton = make("TextButton", {
+        Name = "Minimize",
+        Size = UDim2.fromOffset(14, 14),
+        BackgroundColor3 = COLORS.Yellow,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+        LayoutOrder = 2,
+    }, traffic)
+    addCorner(minimizeButton, 99)
+    bindClick(app, minimizeButton, function()
+        app:Hide()
+    end)
+
+    local maximizeButton = make("TextButton", {
+        Name = "Zoom",
+        Size = UDim2.fromOffset(14, 14),
+        BackgroundColor3 = COLORS.Green,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+        LayoutOrder = 3,
+    }, traffic)
+    addCorner(maximizeButton, 99)
+
+    local windowTitle = label(
+        titleBar,
+        app.Title,
+        UDim2.new(0, 280, 1, 0),
+        UDim2.new(0.5, -140, 0, 0),
+        13,
+        Color3.fromRGB(69, 69, 75),
+        { Font = Enum.Font.GothamMedium, TextXAlignment = Enum.TextXAlignment.Center }
+    )
+    app.WindowTitle = windowTitle
+
+    local expandedSize = window.Size
+    local maximized = false
+    bindClick(app, maximizeButton, function()
+        maximized = not maximized
+        window:TweenSize(
+            maximized and UDim2.new(0.96, 0, 0.94, 0) or expandedSize,
+            Enum.EasingDirection.Out,
+            Enum.EasingStyle.Quart,
+            0.22,
+            true
+        )
+        shadow:TweenSize(
+            maximized and UDim2.new(0.96, 14, 0.94, 16) or UDim2.new(0.84, 14, 0.78, 16),
+            Enum.EasingDirection.Out,
+            Enum.EasingStyle.Quart,
+            0.22,
+            true
+        )
+    end)
+
+    local sidebar = make("Frame", {
+        Name = "Sidebar",
+        Position = UDim2.new(0, 0, 0, 52),
+        Size = UDim2.new(0, 238, 1, -52),
+        BackgroundColor3 = COLORS.Sidebar,
+        BorderSizePixel = 0,
+    }, window)
+    app.Sidebar = sidebar
+
+    local searchBox = make("TextBox", {
+        Name = "Search",
+        Position = UDim2.new(0, 15, 0, 16),
+        Size = UDim2.new(1, -30, 0, 32),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0,
+        ClearTextOnFocus = false,
+        Font = Enum.Font.Gotham,
+        PlaceholderText = "Search",
+        PlaceholderColor3 = Color3.fromRGB(147, 148, 154),
+        Text = "",
+        TextColor3 = COLORS.Text,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, sidebar)
+    addCorner(searchBox, 8)
+    addStroke(searchBox, Color3.fromRGB(222, 223, 228), 0.2, 1)
+    addPadding(searchBox, 31, 10, 0, 0)
+    label(searchBox, "⌕", UDim2.fromOffset(20, 28), UDim2.new(0, 9, 0.5, -14), 20, COLORS.Muted, {
+        TextXAlignment = Enum.TextXAlignment.Center,
+    })
+
+    local navScroll = make("ScrollingFrame", {
+        Name = "Navigation",
+        Position = UDim2.new(0, 0, 0, 60),
+        Size = UDim2.new(1, 0, 1, -72),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 4,
+        ScrollBarImageColor3 = Color3.fromRGB(164, 165, 171),
+        CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    }, sidebar)
+    addPadding(navScroll, 11, 11, 4, 12)
+    local navList = makeVerticalList(navScroll, 10)
+    navList.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    app.Navigation = navScroll
+
+    local content = make("Frame", {
+        Name = "Content",
+        Position = UDim2.new(0, 238, 0, 52),
+        Size = UDim2.new(1, -238, 1, -52),
+        BackgroundColor3 = COLORS.Window,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+    }, window)
+    app.Content = content
+
+    local header = make("Frame", {
+        Name = "PageHeader",
+        Position = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(1, 0, 0, 102),
+        BackgroundTransparency = 1,
+    }, content)
+    addPadding(header, 30, 28, 16, 10)
+    app.PageTitle = label(header, app.Title, UDim2.new(1, 0, 0, 34), UDim2.new(), 25, COLORS.Text, {
+        Font = Enum.Font.GothamBold,
+    })
+    app.PageSubtitle = label(header, app.Subtitle, UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 36), 13, COLORS.Muted)
+
+    local pagesHost = make("Frame", {
+        Name = "Pages",
+        Position = UDim2.new(0, 0, 0, 102),
+        Size = UDim2.new(1, 0, 1, -102),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    }, content)
+    app.PagesHost = pagesHost
+
+    app:_connect(searchBox:GetPropertyChangedSignal("Text"), function()
+        app:_refreshNavigation(searchBox.Text)
+    end)
+    app.SearchBox = searchBox
+
+    app:SetVisible(config.Visible ~= false)
+    return app
+end
+
+function UI:_connect(signal, callback)
+    local connection = signal:Connect(callback)
+    table.insert(self._connections, connection)
+    return connection
+end
+
+function UI:SetVisible(value)
+    if self.ScreenGui and self.ScreenGui.Parent then
+        self.ScreenGui.Enabled = value == true
+    end
+end
+
+function UI:Show()
+    self:SetVisible(true)
+end
+
+function UI:Hide()
+    self:SetVisible(false)
+end
+
+function UI:ToggleVisible()
+    if self.ScreenGui then
+        self:SetVisible(not self.ScreenGui.Enabled)
+    end
+end
+
+function UI:SetTitle(title, subtitle)
+    self.Title = title or self.Title
+    self.WindowTitle.Text = self.Title
+    if subtitle ~= nil then
+        self.Subtitle = subtitle
+    end
+    if self.SelectedTab == nil then
+        self.PageTitle.Text = self.Title
+        self.PageSubtitle.Text = self.Subtitle
+    end
+end
+
+function UI:Destroy()
+    if self._destroyed then
+        return
+    end
+    self._destroyed = true
+    for _, connection in ipairs(self._connections) do
+        connection:Disconnect()
+    end
+    table.clear(self._connections)
+    if self.ScreenGui then
+        self.ScreenGui:Destroy()
+    end
+end
+
+function UI:_selectTab(tab)
+    if self._destroyed or not tab then
+        return
+    end
+    local ancestor = tab._parent
+    while ancestor do
+        ancestor:SetExpanded(true)
+        ancestor = ancestor._parent
+    end
+    tab._section:SetExpanded(true)
+    self.SelectedTab = tab
+    for _, item in ipairs(self.Tabs) do
+        local selected = item == tab
+        item._page.Visible = selected
+        item._row.BackgroundColor3 = selected and COLORS.Selection or Color3.new(1, 1, 1)
+        item._row.BackgroundTransparency = selected and 0 or 1
+        item._title.TextColor3 = selected and Color3.fromRGB(28, 77, 139) or COLORS.Text
+        item._title.Font = selected and Enum.Font.GothamMedium or Enum.Font.Gotham
+    end
+    self.PageTitle.Text = tab.Title
+    self.PageSubtitle.Text = tab.Subtitle or self.Subtitle
+    self:_refreshNavigation(self.SearchBox.Text)
+end
+
+local function tabMatches(tab, query)
+    if query == "" or string.find(string.lower(tab.Title), query, 1, true) then
+        return true
+    end
+    for _, child in ipairs(tab._children) do
+        if tabMatches(child, query) then
+            return true
+        end
+    end
+    return false
+end
+
+function UI:_refreshNavigation(rawQuery)
+    local query = string.lower(string.gsub(rawQuery or "", "^%s*(.-)%s*$", "%1"))
+    local searching = query ~= ""
+    for _, section in ipairs(self.Sections) do
+        local showSection = not searching or string.find(string.lower(section.Title), query, 1, true) ~= nil
+        local matchingTab = false
+        for _, tab in ipairs(section._tabs) do
+            if tabMatches(tab, query) then
+                matchingTab = true
+                break
+            end
+        end
+        section._frame.Visible = showSection or matchingTab
+        for _, tab in ipairs(section._tabs) do
+            tab:_refreshVisibility(searching, query, section._expanded or searching)
+        end
+        section._items.Visible = searching and matchingTab or section._expanded
+    end
+end
+
+function UI:Section(properties)
+    properties = properties or {}
+    local section = setmetatable({
+        _app = self,
+        Title = properties.Title or "Section",
+        _tabs = {},
+        _expanded = properties.Expanded ~= false,
+    }, Section)
+
+    local frame = make("Frame", {
+        Name = "Section_" .. section.Title,
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    }, self.Navigation)
+    makeVerticalList(frame, 3)
+    section._frame = frame
+
+    local heading = make("TextButton", {
+        Name = "SectionHeading",
+        Size = UDim2.new(1, 0, 0, 24),
+        BackgroundTransparency = 1,
+        Text = "",
+        AutoButtonColor = false,
+    }, frame)
+    section._heading = heading
+    label(heading, section.Title:upper(), UDim2.new(1, -25, 1, 0), UDim2.new(0, 7, 0, 0), 10, Color3.fromRGB(116, 117, 123), {
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+    })
+    section._arrow = label(heading, section._expanded and "⌄" or "›", UDim2.fromOffset(18, 24), UDim2.new(1, -21, 0, 0), 16, COLORS.Muted, {
+        TextXAlignment = Enum.TextXAlignment.Center,
+    })
+
+    local items = make("Frame", {
+        Name = "SectionItems",
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Visible = section._expanded,
+    }, frame)
+    makeVerticalList(items, 2)
+    section._items = items
+
+    bindClick(self, heading, function()
+        section:SetExpanded(not section._expanded)
+        self:_refreshNavigation(self.SearchBox.Text)
+    end)
+    table.insert(self.Sections, section)
+    self:_refreshNavigation(self.SearchBox.Text)
+    return section
+end
+
+function Section:SetExpanded(value)
+    self._expanded = value == true
+    self._items.Visible = self._expanded
+    setText(self._arrow, self._expanded and "⌄" or "›")
+end
+
+function Section:Tab(properties)
+    properties = properties or {}
+    local tab = setmetatable({
+        _app = self._app,
+        _section = self,
+        _parent = nil,
+        _children = {},
+        Title = properties.Title or "Tab",
+        Subtitle = properties.Subtitle,
+        Icon = properties.Icon or "◈",
+        _expanded = properties.Expanded == true,
+        _depth = 0,
+    }, Tab)
+    tab:_build(properties, self._items)
+    table.insert(self._tabs, tab)
+    if properties.Selected == true or self._app.SelectedTab == nil then
+        self._app:_selectTab(tab)
+    end
+    self._app:_refreshNavigation(self._app.SearchBox.Text)
+    return tab
+end
+
+function Tab:_build(properties, parent)
+    local app = self._app
+    app._iconIndex = app._iconIndex + 1
+    local palette = ICON_PALETTE[((app._iconIndex - 1) % #ICON_PALETTE) + 1]
+    self.IconColor = properties.IconColor or palette[1]
+    self.IconBackground = properties.IconBackground or palette[2]
+
+    local node = make("Frame", {
+        Name = "TabNode_" .. self.Title,
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    }, parent)
+    makeVerticalList(node, 2)
+    self._node = node
+
+    local row = make("TextButton", {
+        Name = "TabRow",
+        Size = UDim2.new(1, 0, 0, 34),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+        ClipsDescendants = true,
+    }, node)
+    addCorner(row, 8)
+    self._row = row
+
+    local indent = 7 + self._depth * 13
+    local tileSize = self._depth == 0 and 20 or 16
+    local tile = make("Frame", {
+        Name = "IconTile",
+        Position = UDim2.new(0, indent, 0.5, -tileSize / 2),
+        Size = UDim2.fromOffset(tileSize, tileSize),
+        BackgroundColor3 = self.IconBackground,
+        BorderSizePixel = 0,
+    }, row)
+    addCorner(tile, self._depth == 0 and 5 or 4)
+    if type(self.Icon) == "string" and string.match(self.Icon, "^rbxassetid://") then
+        make("ImageLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromScale(0.15, 0.15),
+            Size = UDim2.fromScale(0.7, 0.7),
+            Image = self.Icon,
+            ImageColor3 = self.IconColor,
+        }, tile)
+    else
+        label(tile, self.Icon, UDim2.fromScale(1, 1), UDim2.new(), self._depth == 0 and 13 or 10, self.IconColor, {
+            Font = Enum.Font.GothamMedium,
+            TextXAlignment = Enum.TextXAlignment.Center,
+        })
+    end
+    self._iconTile = tile
+
+    local title = label(
+        row,
+        self.Title,
+        UDim2.new(1, -(indent + tileSize + 33), 1, 0),
+        UDim2.new(0, indent + tileSize + 8, 0, 0),
+        12,
+        COLORS.Text
+    )
+    self._title = title
+
+    local arrow = make("TextButton", {
+        Name = "Disclosure",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -5, 0.5, 0),
+        Size = UDim2.fromOffset(22, 26),
+        BackgroundTransparency = 1,
+        Text = "",
+        AutoButtonColor = false,
+        Visible = false,
+    }, row)
+    label(arrow, self._expanded and "⌄" or "›", UDim2.fromScale(1, 1), UDim2.new(), 16, COLORS.Muted, {
+        TextXAlignment = Enum.TextXAlignment.Center,
+    })
+    self._arrow = arrow:FindFirstChildOfClass("TextLabel")
+
+    local childList = make("Frame", {
+        Name = "NestedTabs",
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Visible = self._expanded,
+    }, node)
+    makeVerticalList(childList, 2)
+    self._childrenFrame = childList
+
+    self._app:_connect(arrow.Activated, function()
+        self:SetExpanded(not self._expanded)
+    end)
+    self._app:_connect(row.Activated, function()
+        app:_selectTab(self)
+    end)
+
+    local page = make("ScrollingFrame", {
+        Name = "Page_" .. self.Title,
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 5,
+        ScrollBarImageColor3 = Color3.fromRGB(174, 176, 183),
+        CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible = false,
+    }, app.PagesHost)
+    addPadding(page, 28, 24, 2, 22)
+    local pageList = makeVerticalList(page, 16)
+    pageList.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    self._page = page
+    self.Page = page
+    table.insert(app.Tabs, self)
+end
+
+function Tab:SetExpanded(value)
+    self._expanded = value == true
+    self._childrenFrame.Visible = self._expanded
+    setText(self._arrow, self._expanded and "⌄" or "›")
+    self._arrow.Parent.Visible = #self._children > 0
+    self._app:_refreshNavigation(self._app.SearchBox.Text)
+end
+
+function Tab:_refreshVisibility(searching, query, ancestorsExpanded)
+    local match = tabMatches(self, query)
+    self._node.Visible = not searching or match
+    if searching then
+        self._childrenFrame.Visible = match and #self._children > 0
+    else
+        self._childrenFrame.Visible = self._expanded
+    end
+    local showDisclosure = #self._children > 0
+    self._arrow.Parent.Visible = showDisclosure
+    if searching and showDisclosure then
+        self._childrenFrame.Visible = match
+    end
+    for _, child in ipairs(self._children) do
+        child:_refreshVisibility(searching, query, searching or (ancestorsExpanded and self._expanded))
+    end
+end
+
+function Tab:Tab(properties)
+    properties = properties or {}
+    local child = setmetatable({
+        _app = self._app,
+        _section = self._section,
+        _parent = self,
+        _children = {},
+        Title = properties.Title or "Tab",
+        Subtitle = properties.Subtitle,
+        Icon = properties.Icon or "•",
+        _expanded = properties.Expanded == true,
+        _depth = self._depth + 1,
+    }, Tab)
+    child:_build(properties, self._childrenFrame)
+    table.insert(self._children, child)
+    self._arrow.Parent.Visible = true
+    self._app:_refreshNavigation(self._app.SearchBox.Text)
+    if properties.Selected == true then
+        self._app:_selectTab(child)
+    end
+    return child
+end
+
+function Tab:Select()
+    self._app:_selectTab(self)
+end
+
+function Tab:PageSection(properties)
+    properties = properties or {}
+    local section = setmetatable({
+        _app = self._app,
+        _tab = self,
+        Title = properties.Title or "Section",
+    }, PageSection)
+
+    local frame = make("Frame", {
+        Name = "PageSection_" .. section.Title,
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    }, self._page)
+    makeVerticalList(frame, 9)
+    section._frame = frame
+
+    label(frame, section.Title, UDim2.new(1, -4, 0, 26), UDim2.new(0, 2, 0, 0), 18, COLORS.Text, {
+        Font = Enum.Font.GothamBold,
+    })
+    if properties.Subtitle then
+        label(frame, properties.Subtitle, UDim2.new(1, -4, 0, 0), UDim2.new(0, 2, 0, 0), 12, COLORS.Muted, {
+            AutomaticSize = Enum.AutomaticSize.Y,
+            TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top,
+        })
+    end
+    return section
+end
+
+local function makeSettingCard(section, name, height)
+    local card = make("Frame", {
+        Name = name or "Setting",
+        Size = UDim2.new(1, 0, 0, height or 66),
+        BackgroundColor3 = COLORS.Panel,
+        BorderSizePixel = 0,
+    }, section._frame)
+    addCorner(card, 11)
+    addStroke(card, Color3.fromRGB(229, 230, 234), 0.15, 1)
+    return card
+end
+
+local function makeDescription(card, titleText, descriptionText, rightPadding)
+    local title = label(
+        card,
+        titleText or "",
+        UDim2.new(1, -(rightPadding or 24), 0, 20),
+        UDim2.new(0, 15, 0, descriptionText and 9 or 0),
+        13,
+        COLORS.Text,
+        { Font = Enum.Font.GothamMedium }
+    )
+    title.AnchorPoint = Vector2.new(0, descriptionText and 0 or 0.5)
+    if descriptionText then
+        label(card, descriptionText, UDim2.new(1, -(rightPadding or 24), 0, 17), UDim2.new(0, 15, 0, 32), 11, COLORS.Muted)
+    end
+    return title
+end
+
+function PageSection:Toggle(properties)
+    properties = properties or {}
+    local current = properties.Value == true
+    local control = { Value = current }
+    local card = makeSettingCard(self, properties.Title or "Toggle", properties.Description and 68 or 54)
+    makeDescription(card, properties.Title or "Toggle", properties.Description, 80)
+
+    local button = make("TextButton", {
+        Name = "Toggle",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -14, 0.5, 0),
+        Size = UDim2.fromOffset(42, 24),
+        BackgroundColor3 = current and COLORS.Green or Color3.fromRGB(205, 206, 212),
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+    }, card)
+    addCorner(button, 99)
+    local knob = make("Frame", {
+        Name = "Knob",
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = current and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+        Size = UDim2.fromOffset(18, 18),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+    }, button)
+    addCorner(knob, 99)
+
+    function control:SetValue(value, fire)
+        current = value == true
+        self.Value = current
+        TweenService:Create(button, TweenInfo.new(0.16), {
+            BackgroundColor3 = current and COLORS.Green or Color3.fromRGB(205, 206, 212),
+        }):Play()
+        TweenService:Create(knob, TweenInfo.new(0.16), {
+            Position = current and UDim2.new(1, -21, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
+        }):Play()
+        if fire ~= false then
+            safeCallback(properties.Callback or properties.Changed, current, self)
+        end
+    end
+    function control:GetValue()
+        return current
+    end
+    bindClick(self._app, button, function()
+        control:SetValue(not current, true)
+    end)
+    return control
+end
+
+function PageSection:Button(properties)
+    properties = properties or {}
+    local card = makeSettingCard(self, properties.Title or "Button", properties.Description and 68 or 54)
+    makeDescription(card, properties.Title or "Button", properties.Description, 132)
+    local button = make("TextButton", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -13, 0.5, 0),
+        Size = UDim2.new(0, properties.ButtonWidth or 96, 0, 30),
+        BackgroundColor3 = properties.Secondary and Color3.fromRGB(242, 243, 246) or COLORS.Blue,
+        BorderSizePixel = 0,
+        Text = properties.Label or "Open",
+        Font = Enum.Font.GothamMedium,
+        TextSize = 12,
+        TextColor3 = properties.Secondary and COLORS.Text or Color3.new(1, 1, 1),
+        AutoButtonColor = true,
+    }, card)
+    addCorner(button, 8)
+    bindClick(self._app, button, function()
+        safeCallback(properties.Callback or properties.Pushed, self._tab, button)
+    end)
+    return button
+end
+
+function PageSection:Slider(properties)
+    properties = properties or {}
+    local min = properties.Min or 0
+    local max = properties.Max or 100
+    local step = properties.Step or 1
+    local value = math.clamp(tonumber(properties.Value) or min, min, max)
+    local control = { Value = value }
+    local card = makeSettingCard(self, properties.Title or "Slider", 76)
+    makeDescription(card, properties.Title or "Slider", properties.Description, 112)
+    local valueLabel = label(card, tostring(value), UDim2.fromOffset(74, 20), UDim2.new(1, -94, 0, 8), 12, COLORS.Muted, {
+        TextXAlignment = Enum.TextXAlignment.Right,
+    })
+    local track = make("TextButton", {
+        Name = "Track",
+        Position = UDim2.new(0, 15, 1, -19),
+        Size = UDim2.new(1, -30, 0, 5),
+        BackgroundColor3 = Color3.fromRGB(221, 222, 227),
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+    }, card)
+    addCorner(track, 99)
+    local fill = make("Frame", {
+        Name = "Fill",
+        Size = UDim2.new((value - min) / math.max(max - min, 0.0001), 0, 1, 0),
+        BackgroundColor3 = COLORS.Blue,
+        BorderSizePixel = 0,
+    }, track)
+    addCorner(fill, 99)
+    local handle = make("Frame", {
+        Name = "Handle",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new((value - min) / math.max(max - min, 0.0001), 0, 0.5, 0),
+        Size = UDim2.fromOffset(14, 14),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
+    }, track)
+    addCorner(handle, 99)
+    addStroke(handle, Color3.fromRGB(204, 205, 210), 0.25, 1)
+
+    function control:SetValue(nextValue, fire)
+        value = math.clamp(tonumber(nextValue) or min, min, max)
+        if step > 0 then
+            value = min + math.floor(((value - min) / step) + 0.5) * step
+            value = math.clamp(value, min, max)
+        end
+        self.Value = value
+        local ratio = (value - min) / math.max(max - min, 0.0001)
+        fill.Size = UDim2.new(ratio, 0, 1, 0)
+        handle.Position = UDim2.new(ratio, 0, 0.5, 0)
+        valueLabel.Text = tostring(value) .. (properties.Suffix or "")
+        if fire ~= false then
+            safeCallback(properties.Callback or properties.Changed, value, self)
+        end
+    end
+    function control:GetValue()
+        return value
+    end
+    local dragging = false
+    local function updateFromInput(input)
+        local width = math.max(track.AbsoluteSize.X, 1)
+        local ratio = math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1)
+        control:SetValue(min + (max - min) * ratio, true)
+    end
+    self._app:_connect(track.InputBegan, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            updateFromInput(input)
+        end
+    end)
+    self._app:_connect(UserInputService.InputChanged, function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateFromInput(input)
+        end
+    end)
+    self._app:_connect(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    control:SetValue(value, false)
+    return control
+end
+
+function PageSection:SegmentedControl(properties)
+    properties = properties or {}
+    local options = properties.Options or { "One", "Two" }
+    local value = properties.Value or options[1]
+    local control = { Value = value }
+    local card = makeSettingCard(self, "SegmentedControl", properties.Preview and 142 or 70)
+    label(card, properties.Title or "Choose an option", UDim2.new(1, -30, 0, 20), UDim2.new(0, 15, 0, 11), 13, COLORS.Text, {
+        Font = Enum.Font.GothamMedium,
+    })
+    local row = make("Frame", {
+        Name = "Options",
+        Position = UDim2.new(0, 13, 0, properties.Preview and 39 or 37),
+        Size = UDim2.new(1, -26, 0, properties.Preview and 88 or 25),
+        BackgroundTransparency = 1,
+    }, card)
+    local layout = make("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalFlex = Enum.UIFlexAlignment.Fill,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 7),
+    }, row)
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    local optionButtons = {}
+
+    local function refresh()
+        for option, button in pairs(optionButtons) do
+            local selected = option == value
+            button.BackgroundColor3 = selected and Color3.fromRGB(229, 239, 255) or Color3.fromRGB(247, 247, 249)
+            local stroke = button:FindFirstChildOfClass("UIStroke")
+            if stroke then
+                stroke.Color = selected and COLORS.Blue or COLORS.Border
+                stroke.Transparency = selected and 0.05 or 0.35
+            end
+        end
+    end
+    function control:SetValue(nextValue, fire)
+        if table.find(options, nextValue) == nil then
+            return
+        end
+        value = nextValue
+        self.Value = value
+        refresh()
+        if fire ~= false then
+            safeCallback(properties.Callback or properties.Changed, value, self)
+        end
+    end
+    function control:GetValue()
+        return value
+    end
+
+    for index, option in ipairs(options) do
+        local button = make("TextButton", {
+            Name = "Option_" .. tostring(option),
+            Size = UDim2.new(1 / #options, -5, 1, 0),
+            BackgroundColor3 = Color3.fromRGB(247, 247, 249),
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = index,
+        }, row)
+        addCorner(button, 8)
+        addStroke(button, COLORS.Border, 0.35, 1)
+        if properties.Preview then
+            local preview = make("Frame", {
+                Position = UDim2.new(0.5, -23, 0, 8),
+                Size = UDim2.fromOffset(46, 47),
+                BackgroundColor3 = option == "Dark" and Color3.fromRGB(38, 39, 45) or Color3.fromRGB(248, 248, 250),
+                BorderSizePixel = 0,
+            }, button)
+            addCorner(preview, 6)
+            addStroke(preview, Color3.fromRGB(191, 192, 198), 0.25, 1)
+            make("Frame", {
+                Position = UDim2.new(0, 0, 0, 0),
+                Size = UDim2.new(0.28, 0, 1, 0),
+                BackgroundColor3 = option == "Dark" and Color3.fromRGB(53, 54, 62) or Color3.fromRGB(230, 231, 235),
+                BorderSizePixel = 0,
+            }, preview)
+            label(button, tostring(option), UDim2.new(1, -8, 0, 20), UDim2.new(0, 4, 1, -25), 11, COLORS.Text, {
+                TextXAlignment = Enum.TextXAlignment.Center,
+                Font = Enum.Font.GothamMedium,
+            })
+        else
+            label(button, tostring(option), UDim2.new(1, -8, 1, 0), UDim2.new(0, 4, 0, 0), 11, COLORS.Text, {
+                TextXAlignment = Enum.TextXAlignment.Center,
+            })
+        end
+        optionButtons[option] = button
+        bindClick(self._app, button, function()
+            control:SetValue(option, true)
+        end)
+    end
+    refresh()
+    return control
+end
+
+function PageSection:ColorSwatches(properties)
+    properties = properties or {}
+    local colors = properties.Colors or {
+        Color3.fromRGB(0, 122, 255),
+        Color3.fromRGB(48, 209, 88),
+        Color3.fromRGB(255, 149, 0),
+        Color3.fromRGB(255, 55, 95),
+        Color3.fromRGB(175, 82, 222),
+        Color3.fromRGB(90, 200, 250),
+        Color3.fromRGB(142, 142, 147),
+    }
+    local value = properties.Value or colors[1]
+    local control = { Value = value }
+    local card = makeSettingCard(self, properties.Title or "Accent color", 64)
+    label(card, properties.Title or "Accent color", UDim2.new(0.48, -18, 1, 0), UDim2.new(0, 15, 0, 0), 13, COLORS.Text, {
+        Font = Enum.Font.GothamMedium,
+    })
+    local swatches = make("Frame", {
+        Name = "ColorSwatches",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -13, 0.5, 0),
+        Size = UDim2.new(0.52, -4, 0, 26),
+        BackgroundTransparency = 1,
+    }, card)
+    local layout = make("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 7),
+    }, swatches)
+
+    local buttons = {}
+    local function refresh()
+        for color, button in pairs(buttons) do
+            local stroke = button:FindFirstChildOfClass("UIStroke")
+            if stroke then
+                stroke.Thickness = color == value and 2 or 1
+                stroke.Color = color == value and COLORS.Text or Color3.fromRGB(214, 215, 220)
+            end
+        end
+    end
+    function control:SetValue(nextValue, fire)
+        value = nextValue
+        self.Value = value
+        refresh()
+        if fire ~= false then
+            safeCallback(properties.Callback or properties.Changed, value, self)
+        end
+    end
+    function control:GetValue()
+        return value
+    end
+
+    for index, color in ipairs(colors) do
+        local button = make("TextButton", {
+            Name = "Swatch_" .. tostring(index),
+            Size = UDim2.fromOffset(23, 23),
+            BackgroundColor3 = color,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = index,
+        }, swatches)
+        addCorner(button, 99)
+        addStroke(button, Color3.fromRGB(214, 215, 220), 0, 1)
+        buttons[color] = button
+        bindClick(self._app, button, function()
+            control:SetValue(color, true)
+        end)
+    end
+    refresh()
+    return control
+end
+
+function PageSection:Notice(properties)
+    properties = properties or {}
+    local card = makeSettingCard(self, "Notice", properties.Description and 60 or 44)
+    card.BackgroundColor3 = Color3.fromRGB(235, 243, 255)
+    label(card, properties.Title or "Tip", UDim2.new(1, -26, 0, 18), UDim2.new(0, 13, 0, 7), 12, Color3.fromRGB(35, 93, 163), {
+        Font = Enum.Font.GothamBold,
+    })
+    if properties.Description then
+        label(card, properties.Description, UDim2.new(1, -26, 0, 30), UDim2.new(0, 13, 0, 25), 11, Color3.fromRGB(61, 100, 146), {
+            TextWrapped = true,
+            TextYAlignment = Enum.TextYAlignment.Top,
+        })
+    end
+    return card
+end
+
+return UI
