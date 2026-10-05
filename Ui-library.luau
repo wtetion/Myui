@@ -4,7 +4,7 @@
 local UI = {
 	CascadeVersion = "v1.4.0",
 	Version = "1.4.0",
-	BuildId = "1.4.0-windui-popovers-colorwheel-search",
+	BuildId = "1.4.0-windui-icon-gloss-accent-fix3",
 }
 
 local RELEASE_URL = "https://github.com/cascadeui/Cascade/releases/download/v1.4.0/dist.luau"
@@ -293,33 +293,67 @@ local function styleTabIcons(tabs)
 			local leading = structures.Leading
 			local tile = make(leading, "Frame", {
 				Name = "CascadeColorIconTile",
-				BackgroundColor3 = tileColor,
+				BackgroundColor3 = Color3.new(1, 1, 1),
 				BackgroundTransparency = 0,
 				BorderSizePixel = 0,
+				ClipsDescendants = true,
 				LayoutOrder = symbol.LayoutOrder,
 				Size = UDim2.fromOffset(26, 26),
+				ZIndex = 3,
 			})
-			local corner = make(tile, "UICorner", { CornerRadius = UDim.new(0, 7) })
+			local corner = make(tile, "UICorner", { CornerRadius = UDim.new(0, 8) })
+			local tileGradient = make(tile, "UIGradient", {
+				Name = "CascadeIconDepth",
+				Rotation = 90,
+				Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, tileColor:Lerp(Color3.new(1, 1, 1), 0.28)),
+					ColorSequenceKeypoint.new(0.48, tileColor),
+					ColorSequenceKeypoint.new(1, tileColor:Lerp(Color3.new(0, 0, 0), 0.2)),
+				}),
+			})
 			local stroke = make(tile, "UIStroke", {
+				Name = "AccentIconOutline",
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 				Color = tileColor,
-				Thickness = 1,
-				Transparency = 1,
+				Thickness = 1.8,
+				Transparency = 0,
 			})
-			local gradient
-			if key == "Siri" then
-				gradient = make(tile, "UIGradient", {
-					Color = ColorSequence.new({
-						ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 84, 151)),
-						ColorSequenceKeypoint.new(0.34, Color3.fromRGB(148, 91, 239)),
-						ColorSequenceKeypoint.new(0.68, Color3.fromRGB(61, 163, 255)),
-						ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 132, 89)),
-					}),
-				})
-			end
+			local gloss = make(tile, "Frame", {
+				Name = "CascadeIconGloss",
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = 0.58,
+				BorderSizePixel = 0,
+				Position = UDim2.fromOffset(1, 1),
+				Size = UDim2.new(1, -2, 0, 15),
+				ZIndex = 4,
+			})
+			make(gloss, "UICorner", { CornerRadius = UDim.new(0, 7) })
+			make(gloss, "UIGradient", {
+				Rotation = 90,
+				Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0.18),
+					NumberSequenceKeypoint.new(0.58, 0.68),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
+			})
+			local glint = make(gloss, "Frame", {
+				Name = "IconGlint",
+				AnchorPoint = Vector2.new(0.5, 0),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = 0.45,
+				BorderSizePixel = 0,
+				Position = UDim2.new(0.5, 0, 0, 2),
+				Size = UDim2.new(0.65, 0, 0, 1),
+				ZIndex = 5,
+			})
+			make(glint, "UICorner", { CornerRadius = UDim.new(1, 0) })
+			local hasMulticolorGradient = key == "Siri"
 			symbol.Parent = tile
 			symbol.AnchorPoint = Vector2.new(0.5, 0.5)
 			symbol.Position = UDim2.fromScale(0.5, 0.5)
 			symbol.Size = UDim2.fromOffset(16, 16)
+			symbol.ZIndex = 6
 			symbol.LayoutOrder = 1
 			symbol.ImageTransparency = 0
 			structures.Body.Size = UDim2.new(1, 0, 0, 36)
@@ -330,10 +364,12 @@ local function styleTabIcons(tabs)
 				Tile = tile,
 				Stroke = stroke,
 				Corner = corner,
+				TileGradient = tileGradient,
+				Gloss = gloss,
 				Symbol = symbol,
 				Title = structures.Title,
 				Body = structures.Body,
-				Gradient = gradient,
+				HasMulticolorGradient = hasMulticolorGradient,
 				BaseColor = tileColor,
 			}
 			table.insert(entries, entry)
@@ -352,9 +388,16 @@ local function styleTabIcons(tabs)
 
 	local style = { Value = 1 }
 	function style:SetAccent(accent)
-		self.Accent = accent
-		if self.Value == 4 then
-			self:SetValue(4)
+		if typeof(accent) == "Color3" then
+			self.Accent = accent
+			for _, entry in ipairs(entries) do
+				if entry.Stroke.Parent then
+					entry.Stroke.Color = accent
+					entry.Stroke.Transparency = 0
+					entry.Stroke.Thickness = self.Value == 4 and 2.2 or 1.8
+				end
+			end
+			self:SetValue(self.Value)
 		end
 	end
 	function style:SetValue(value)
@@ -365,32 +408,43 @@ local function styleTabIcons(tabs)
 		for _, entry in ipairs(entries) do
 			local tile, symbol = entry.Tile, entry.Symbol
 			if tile.Parent then
+				local accent = self.Accent or SYSTEM_BLUE
 				local glyphColor = Color3.new(1, 1, 1)
+				local backgroundColor = entry.BaseColor
 				if value == 1 then
-					tile.BackgroundColor3 = entry.BaseColor
-					tile.BackgroundTransparency = 0
-					entry.Stroke.Transparency = 1
+					backgroundColor = entry.BaseColor
 				elseif value == 2 then
-					tile.BackgroundColor3 = Color3.fromRGB(53, 54, 59)
-					tile.BackgroundTransparency = 0
-					entry.Stroke.Transparency = 1
+					backgroundColor = Color3.fromRGB(53, 54, 59)
 				elseif value == 3 then
-					tile.BackgroundColor3 = entry.BaseColor:Lerp(Color3.new(1, 1, 1), 0.55)
-					tile.BackgroundTransparency = 0.12
-					entry.Stroke.Color = entry.BaseColor
-					entry.Stroke.Transparency = 0.5
+					backgroundColor = entry.BaseColor:Lerp(Color3.new(1, 1, 1), 0.55)
 					glyphColor = entry.BaseColor
 				else
-					local accent = self.Accent or SYSTEM_BLUE
-					tile.BackgroundColor3 = entry.BaseColor:Lerp(accent, 0.36)
-					tile.BackgroundTransparency = 0
-					entry.Stroke.Transparency = 1
+					backgroundColor = entry.BaseColor:Lerp(accent, 0.36)
 				end
+				tile.BackgroundColor3 = Color3.new(1, 1, 1)
+				tile.BackgroundTransparency = 0
+				if entry.HasMulticolorGradient and value == 1 then
+					entry.TileGradient.Rotation = 35
+					entry.TileGradient.Color = ColorSequence.new({
+						ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 84, 151)),
+						ColorSequenceKeypoint.new(0.34, Color3.fromRGB(148, 91, 239)),
+						ColorSequenceKeypoint.new(0.68, Color3.fromRGB(61, 163, 255)),
+						ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 132, 89)),
+					})
+				else
+					entry.TileGradient.Rotation = 90
+					entry.TileGradient.Color = ColorSequence.new({
+						ColorSequenceKeypoint.new(0, backgroundColor:Lerp(Color3.new(1, 1, 1), value == 3 and 0.18 or 0.3)),
+						ColorSequenceKeypoint.new(0.48, backgroundColor),
+						ColorSequenceKeypoint.new(1, backgroundColor:Lerp(Color3.new(0, 0, 0), value == 2 and 0.12 or 0.2)),
+					})
+				end
+				entry.Stroke.Color = accent
+				entry.Stroke.Thickness = value == 4 and 2.2 or 1.8
+				entry.Stroke.Transparency = 0
+				entry.Gloss.BackgroundTransparency = value == 2 and 0.76 or value == 3 and 0.68 or 0.58
 				entry.GlyphColor = glyphColor
 				symbol.ImageColor3 = glyphColor
-				if entry.Gradient then
-					entry.Gradient.Transparency = value == 1 and NumberSequence.new(0) or NumberSequence.new(1)
-				end
 			end
 		end
 	end
@@ -799,7 +853,8 @@ local function configureSearchSuggestions(window, search, tabs)
 end
 
 local function animateSearchEntrance(search)
-	local body = search and search.Body
+	local bodyStructure = search and search.Body
+	local body = typeof(bodyStructure) == "Instance" and bodyStructure or bodyStructure and bodyStructure.__instance
 	if not body or not body.Parent then
 		return
 	end
