@@ -3,13 +3,22 @@
 -- the UI reference; this file only loads it and opens the window.
 
 local LIBRARY_URL = "https://raw.githubusercontent.com/wtetion/Myui/refs/heads/main/Ui-library.luau"
+local LIBRARY_FILE = "Ui-library.luau"
 local SIGN_IN_IMAGE = "rbxassetid://86949082023913"
+local REQUIRED_BUILD = "1.4.0-windui-popovers-colorwheel-search"
 
 if type(loadstring) ~= "function" then
 	error("[Myui Example] This executor must provide loadstring.", 0)
 end
 
 local function fetchLibrary()
+	if type(readfile) == "function" then
+		local ok, source = pcall(readfile, LIBRARY_FILE)
+		if ok and type(source) == "string" and #source > 0 then
+			return source
+		end
+	end
+
 	local requests = {
 		function()
 			return game:HttpGet(LIBRARY_URL)
@@ -41,6 +50,13 @@ if not ok then
 end
 if type(UI) ~= "table" or type(UI.CreateSystemSettings) ~= "function" then
 	error("[Myui Example] Ui-library.luau returned an incompatible API.", 0)
+end
+if UI.BuildId ~= REQUIRED_BUILD then
+	error(
+		"[Myui Example] Loaded an outdated Ui-library.luau (BuildId " .. tostring(UI.BuildId) .. "). "
+			.. "Use the matching library file from this package or update the Myui GitHub file first.",
+		0
+	)
 end
 
 -- Creates Sign In, Software Update, Connectivity, System,
